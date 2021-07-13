@@ -1,0 +1,12 @@
+{
+    "interval": 1,
+    "dir": "network/",
+    "seed": 0,
+    "roadnetFile": "intersection.net.json",
+    "flowFile": "intersection.flow.json",
+    "rlTrafficLight": true,
+    "saveReplay": true,
+    "roadnetLogFile": "roadnetLog.json",
+    "replayLogFile": "roadnetLogReplay.txt"
+}
+
