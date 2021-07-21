@@ -17,9 +17,33 @@ from tile_coding import TileCodingMapper
 
 from ipdb import set_trace
 
-NUM_EPISODES=20
-EPISODE=24 * 3600
-# TODO: separate parameter parsing with a decorator
+NUM_EPISODES=2
+EPISODE=2 * 3600
+
+# prevent randomization
+PYTHONHASHSEED=-1
+
+def update_emissions(eng, emissions):
+    """Builds sumo like emission file"""
+    for veh_id in eng.get_vehicles(include_waiting=False):
+        data = eng.get_vehicle_info(veh_id)
+
+        emission_dict = {
+            'time': eng.get_current_time(),
+            'id': veh_id,
+            'lane': data['drivable'],
+            'pos': float(data['distance']),
+            'route': simple_hash(data['route']),
+            'speed': float(data['speed']),
+            'type': 'human',
+            'x': 0,
+            'y': 0
+        }
+        emissions.append(emission_dict)
+
+def simple_hash(x):
+    return hash(x) % (11 * 255)
+
 def main(train_config_path=None):
 
     # Setup config parser path.
@@ -62,7 +86,7 @@ def main(train_config_path=None):
     a_cats = []
     phases_per_edges = {}
     p = 0
-    for i, intersection in enumerate(intersections):
+    for intersection in intersections:
         lightphases = intersection['trafficLight']['lightphases']
         for linkids in lightphases:
             if any(linkids['availableRoadLinks']):
@@ -84,6 +108,7 @@ def main(train_config_path=None):
 
 
     info_dict = defaultdict(lambda : [])
+    emissions = []
     for time_step in tqdm(range(int(EPISODE * NUM_EPISODES))):
         obs_dict = {}
         state_dict = {}
@@ -111,9 +136,11 @@ def main(train_config_path=None):
         info_dict["vehicles"].append(num_vehicles)
         info_dict["observation_spaces"].append(obs_dict)
         info_dict["actions"].append(action_dict)
-        info_dict["states"].append(state_dict[tl_id])
+        info_dict["states"].append(state_dict)
 
+        update_emissions(eng, emissions)
         eng.next_step()
+
         # TODO: use path
         chkpt_dir = f"{experiment_path}/checkpoint/"
         os.makedirs(chkpt_dir, exist_ok=True)
@@ -141,6 +168,7 @@ def main(train_config_path=None):
     os.makedirs(chkpt_dir, exist_ok=True)
     for a_cat in a_cats:
         a_cat.save(file_dir=chkpt_dir)
+
     # chkpt_dir = f"{experiment_path}/checkpoint/"
     # os.makedirs(chkpt_dir, exist_ok=True)
     # a_cat.save(file_dir=chkpt_dir)
@@ -150,10 +178,10 @@ def main(train_config_path=None):
     # Store train parameters (config file). 
     # config_parser.store_config(experiment_path / 'config')
 
-    save_dir_path = Path(experiment_path) / 'config'
-    if not save_dir_path.exists():
-        save_dir_path.mkdir()
-    copyfile(train_config_path, save_dir_path / 'train.config')
+    # save_dir_path = Path(experiment_path) / 'config'
+    # if not save_dir_path.exists():
+    #     save_dir_path.mkdir()
+    # copyfile(train_config_path, save_dir_path / 'train.config')
     # Store a copy of the tls_config.json file.
     # tls_config_path = NETWORKS_PATH / train_args.network / 'tls_config.json'
     # copyfile(tls_config_path, experiment_path / 'tls_config.json')
@@ -174,6 +202,9 @@ def main(train_config_path=None):
     with train_log_path.open('w') as f:
         json.dump(info_dict, f)
 
+    emission_log_path = logs_dir_path / "emission_log.json"
+    with emission_log_path.open('w') as f:
+        json.dump(emissions, f)
     return str(experiment_path)
 
 if __name__ == '__main__':
