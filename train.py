@@ -23,66 +23,85 @@ EPISODE=2 * 3600
 # prevent randomization
 PYTHONHASHSEED=-1
 
-def update_emissions(eng, emissions):
-    """Builds sumo like emission file"""
-    for veh_id in eng.get_vehicles(include_waiting=False):
-        data = eng.get_vehicle_info(veh_id)
 
-        emission_dict = {
-            'time': eng.get_current_time(),
-            'id': veh_id,
-            'lane': data['drivable'],
-            'pos': float(data['distance']),
-            'route': simple_hash(data['route']),
-            'speed': float(data['speed']),
-            'type': 'human',
-            'x': 0,
-            'y': 0
-        }
-        emissions.append(emission_dict)
+# def update_emissions(eng, emissions):
+#     """Builds sumo like emission file"""
+#     for veh_id in eng.get_vehicles(include_waiting=False):
+#         data = eng.get_vehicle_info(veh_id)
+# 
+#         emission_dict = {
+#             'time': eng.get_current_time(),
+#             'id': veh_id,
+#             'lane': data['drivable'],
+#             'pos': float(data['distance']),
+#             'route': simple_hash(data['route']),
+#             'speed': float(data['speed']),
+#             'type': 'human',
+#             'x': 0,
+#             'y': 0
+#         }
+#         emissions.append(emission_dict)
+# 
+# def simple_hash(x):
+#     return hash(x) % (11 * 255)
 
-def simple_hash(x):
-    return hash(x) % (11 * 255)
+def build():
+    pass
+
+def load():
+    pass
+
 
 def main(train_config_path=None):
-
     # Setup config parser path.
-    if train_config_path is not None:
+    if train_config_path is None:
+        seed = 0
+        network = 'intersection'
+    else:
         print(f'Loading train parameters from: {train_config_path}')
 
         # Load config file with parameters.
         train_config = configparser.ConfigParser()
-
         train_config.read(train_config_path)
-
         train_args = train_config['train_args']
 
         # only seed
-        seed = int(train_args['experiment_seed']) if train_args['experiment_seed'] is not None else None
-    else:
-        # print('Loading train parameters from: configs/train.config [DEFAULT]')
-        seed = 0
+        experiment_seed = eval(train_args['experiment_seed'])
+        seed = int(experiment_seed) if experiment_seed  is not None else 0
+        network = train_args['network']
 
     # Parse train parameters.
-    #train_args = config_parser.parse_train_params(print_params=True)
-
-    config_file_path = 'network/intersection/config.json'
-    eng = Engine(config_file_path, thread_num=4)
+    config_file_path = Path(f'data/networks/{network}/config.json')
+    roadnet_file_path = Path(f'data/networks/{network}/roadnet.json')
+    flow_file_path = Path(f'data/networks/{network}/flow.json')
+    eng = Engine(config_file_path.as_posix(), thread_num=4)
 
     np.random.seed(seed)
     eng.set_random_seed(seed)
-    with open('network/intersection/roadnet.json', 'r') as f:
-        network = json.load(f)
-
+    with roadnet_file_path.open() as f: roadnet = json.load(f)
+    with config_file_path.open() as f: config = json.load(f)
 
 
     timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
-    experiment_path =  f'data/intersection_{timestamp}'
+    experiment_path =  f'data/emissions/intersection_{timestamp}'
+    # TODO: replace by pathlib
     os.makedirs(experiment_path, exist_ok=True)
     print(f'Experiment: {str(experiment_path)}\n')
 
-    intersections = [item for item in network['intersections'] if not item['virtual']]
-    # prepare intersection
+    # TODO: save logs
+    config['dir'] = f'{experiment_path}/'
+    
+    save_dir_path = Path(experiment_path) / 'config'
+    if not save_dir_path.exists():
+        save_dir_path.mkdir()
+    copyfile(train_config_path, save_dir_path / 'train.config')
+    copyfile(flow_file_path, save_dir_path / 'flow.json')
+    copyfile(roadnet_file_path, save_dir_path / 'roadnet.json')
+    with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
+    # Build agents
+    intersections = [item for item in roadnet['intersections'] if not item['virtual']]
+
+    # TODO: prepare intersection
     a_cats = []
     phases_per_edges = {}
     p = 0
@@ -101,7 +120,10 @@ def main(train_config_path=None):
 
         tl_id = intersection['id']
         num_phases = len(phases_per_edges)
+        # TODO: WAVE is the function approximator.
+        # TODO: replace by delay calculator.
         wave = WAVE(eng, phases_per_edges)
+        # TODO: TileCoding must receive the capacities 
         mapper = TileCodingMapper(len(phases_per_edges), 1)
         acat = ACAT(tl_id, num_phases, wave, mapper)
         a_cats.append(acat)
@@ -129,6 +151,10 @@ def main(train_config_path=None):
             elif time_episode == next_change: # Only visits even phases
                 eng.set_tl_phase(a_cat.tl_id, (2 * phase_id) % (2 * num_phases))
 
+            # save time_step
+            # if time_episode % save_agent_interval == 0:
+            #     pass
+
         sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
         num_vehicles = eng.get_vehicle_count()
         info_dict["rewards"].append(reward_dict)
@@ -138,18 +164,18 @@ def main(train_config_path=None):
         info_dict["actions"].append(action_dict)
         info_dict["states"].append(state_dict)
 
-        update_emissions(eng, emissions)
+        # update_emissions(eng, emissions)
         eng.next_step()
 
         # TODO: use path
-        chkpt_dir = f"{experiment_path}/checkpoint/"
+        chkpt_dir = f"{experiment_path}/checkpoints/"
         os.makedirs(chkpt_dir, exist_ok=True)
         if (eng.get_current_time() + 1) % EPISODE == 0:
             eng.reset()
+            chkpt_dir = Path(chkpt_dir) / str(int(eng.get_current_time() + 1))
             for a_cat in a_cats:
-                this_chkpt_dir = f"{chkpt_dir}/{a_cat.tl_id}"
-                os.makedirs(this_chkpt_dir, exist_ok=True)
-                a_cat.save(file_dir=this_chkpt_dir, chkpt_num=int((time_step + 1) / EPISODE) + 1)
+                os.makedirs(chkpt_dir, exist_ok=True)
+                a_cat.save(file_dir=chkpt_dir)
                 eng.set_tl_phase(a_cat.tl_id, 0)
 
 
@@ -160,15 +186,6 @@ def main(train_config_path=None):
         # eng.get_vehicle_speed()
         # do something 
 
-
-
-
-
-    chkpt_dir = f"{experiment_path}/checkpoint/"
-    os.makedirs(chkpt_dir, exist_ok=True)
-    for a_cat in a_cats:
-        a_cat.save(file_dir=chkpt_dir)
-
     # chkpt_dir = f"{experiment_path}/checkpoint/"
     # os.makedirs(chkpt_dir, exist_ok=True)
     # a_cat.save(file_dir=chkpt_dir)
@@ -178,17 +195,6 @@ def main(train_config_path=None):
     # Store train parameters (config file). 
     # config_parser.store_config(experiment_path / 'config')
 
-    # save_dir_path = Path(experiment_path) / 'config'
-    # if not save_dir_path.exists():
-    #     save_dir_path.mkdir()
-    # copyfile(train_config_path, save_dir_path / 'train.config')
-    # Store a copy of the tls_config.json file.
-    # tls_config_path = NETWORKS_PATH / train_args.network / 'tls_config.json'
-    # copyfile(tls_config_path, experiment_path / 'tls_config.json')
-
-    # Store a copy of the demands.json file.
-    # demands_file_path = NETWORKS_PATH / train_args.network / 'demands.json'
-    # copyfile(demands_file_path, experiment_path / 'demands.json')
 
     # Run the experiment.
     #info_dict = exp.run(train_args.experiment_time)
@@ -202,10 +208,10 @@ def main(train_config_path=None):
     with train_log_path.open('w') as f:
         json.dump(info_dict, f)
 
-    emission_log_path = logs_dir_path / "emission_log.json"
-    with emission_log_path.open('w') as f:
-        json.dump(emissions, f)
+    # emission_log_path = logs_dir_path / "emission_log.json"
+    # with emission_log_path.open('w') as f:
+    #     json.dump(emissions, f)
     return str(experiment_path)
 
 if __name__ == '__main__':
-    main()
+    main(train_config_path='train.config')

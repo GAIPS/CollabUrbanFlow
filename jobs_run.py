@@ -17,21 +17,20 @@ from pathlib import Path
 from jobs_train import train_batch as train
 from jobs_rollouts import rollout_batch as rollouts
 from train_plots import main as train_plots
-from test_plots import main as test_plots
+# from test_plots import main as test_plots
 
 if __name__ == '__main__':
     # 1) Train agent(s).
     experiment_root_path = train()
-    import ipdb; ipdb.set_trace()
     # 2) Create train plots.
-    # experiment_root_path = Path('data/20210709210526.429916/')
+    # experiment_root_path = 'data/20210722175215.908888'
     train_plots(experiment_root_path)
 
     # 3) Execute rollouts with last saved checkpoints (test).
-    # rollouts(test=True, experiment_dir=experiment_root_path)
+    rollouts(test=True, experiment_dir=experiment_root_path)
 
     # 4) Create plots with metrics plots for final agent.
-    # test_plots(experiment_root_path)
+    test_plots(experiment_root_path)
 
 
     # 5) Cleaning emissions.

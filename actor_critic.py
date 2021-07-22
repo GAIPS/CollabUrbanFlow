@@ -170,11 +170,8 @@ class ACAT(object):
 
     """ Serialization """
     # Serializes the object's copy -- sets get_wave to null.
-    def save(self, file_dir="", chkpt_num=None):
-        if chkpt_num is None:
-            file_path = Path(file_dir) / f'A_CAT-{self.tl_id}.chkpt'
-        else:
-            file_path = Path(file_dir) / f'{chkpt_num}.chkpt'
+    def save(self, file_dir=""):
+        file_path = Path(file_dir) / f'{self.tl_id}.chkpt'
         cpy = deepcopy(self)
         with open(file_path, mode='wb') as f:
             dill.dump(cpy, f)

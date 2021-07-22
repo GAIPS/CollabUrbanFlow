@@ -1,10 +1,11 @@
 """
     jobs/train.py
 """
+from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 import sys
-import os
+# import os
 import time
 import json
 import tempfile
@@ -59,7 +60,7 @@ def delay_train(args):
     return benchmarked_train(args[1])
 
 
-def train_batch(categories={}):
+def train_batch():
 
     print('\nRUNNING jobs/train.py\n')
 
@@ -92,6 +93,7 @@ def train_batch(categories={}):
 
     # Read train.py arguments from train.config file.
     train_config = configparser.ConfigParser()
+    train_config.read('train.config')
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S.%f')
     print(f'Experiment timestamp: {timestamp}\n')
 
@@ -100,22 +102,24 @@ def train_batch(categories={}):
         # Create a config file for each train.py
         # with the respective seed. These config
         # files are stored in a temporary directory.
+        tmpdir_path = Path(tmp_dir)
         train_configs = []
         for seed in train_seeds:
 
-            tmp_train_cfg_path = os.path.join(tmp_dir,
-                                        'train-{0}.config'.format(seed))
-            train_configs.append(tmp_train_cfg_path)
+            # Determine target path.
+            train_tmp_path = tmpdir_path / f'train-{seed}.config'
+            train_configs.append(train_tmp_path.as_posix())
 
             # Setup train seed.
-            train_config["train_args"] = {"experiment_seed": str(seed)}
-            # if any(categories):
-            #     train_config.set("mdp_args", "category", str(categories))
+            train_tmpcfg = deepcopy(train_config)
+            train_tmpcfg.set("train_args", "experiment_seed", str(seed))
 
             # Write temporary train config file.
-            tmp_cfg_file = open(tmp_train_cfg_path, "w")
-            train_config.write(tmp_cfg_file)
-            tmp_cfg_file.close()
+            with train_tmp_path.open('w') as f:
+                train_tmpcfg.write(f)
+            # tmp_cfg_file = open(train_tmp_path, "w")
+            # train_config.write(tmp_cfg_file)
+            # tmp_cfg_file.close()
 
         # Run.
         # rvs: directories' names holding experiment data
