@@ -1,3 +1,6 @@
+# Known issues
+
+[] Test plots waiting time: all or nothing.
 # Requirements
 ## Train
 1. network

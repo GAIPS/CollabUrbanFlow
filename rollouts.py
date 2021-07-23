@@ -62,11 +62,15 @@ def main(run_path=None):
     # TODO: Change path to checkpoints
     # TODO: Read train
     rollouts_config.read(run_path)
-    rollouts_args = rollouts_config['rollouts_args']
+    rollouts_args = rollouts_config['test_args']
 
     # Setup parser with custom path (load correct train parameters).
-    orig_path = rollouts_config.get('rollouts_args', 'run-path')
-    rollout_time = rollouts_config.get('rollouts_args', 'rollout-time') 
+    orig_path = rollouts_args['run-path']
+    rollout_time = int(rollouts_args['rollout-time'])
+    chkpt_num = int(rollouts_args['chkpt-number'])
+    seed = int(rollouts_args['seed'])
+    checkpoints_dir_path = Path(orig_path) / 'checkpoints' 
+
     # training data
     train_path = Path(orig_path) / 'config' / 'train.config'
 
@@ -83,7 +87,7 @@ def main(run_path=None):
 
     target_path =  target_path / f'{network}_{timestamp}'
     target_path.mkdir(exist_ok=True)
-    seed = eval(rollouts_args['seed'])
+    
 
     # TODO: replace by pathlib
     print(f'Experiment: {str(target_path)}\n')
@@ -120,14 +124,18 @@ def main(run_path=None):
                 p += 1
 
 
-        tl_id = intersection['id']
-        num_phases = len(phases_per_edges)
+        # tl_id = intersection['id']
+        # num_phases = len(phases_per_edges)
         # TODO: WAVE is the function approximator.
         # TODO: replace by delay calculator.
         wave = WAVE(eng, phases_per_edges)
         # TODO: TileCoding must receive the capacities 
         mapper = TileCodingMapper(len(phases_per_edges), 1)
-        acat = ACAT(tl_id, num_phases, wave, mapper)
+        # TODO: get_agent('A_CAT')
+        # TODO: Load agent.
+        acat = ACAT.load_checkpoint(checkpoints_dir_path, chkpt_num)
+        acat.get_wave = wave
+        # acat = ACAT(tl_id, num_phases, wave, mapper)
         a_cats.append(acat)
 
 
@@ -186,7 +194,8 @@ def main(run_path=None):
     emission_log_path = logs_dir_path / "emission_log.json"
     with emission_log_path.open('w') as f:
         json.dump(emissions, f)
-    return str(target_path)
+    info_dict['id'] = chkpt_num
+    return info_dict
 
 if __name__ == '__main__':
     main(run_path='train.config')

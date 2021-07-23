@@ -150,7 +150,6 @@ def rollout_batch(test=False, experiment_dir=None):
         raise ValueError('No checkpoints found.')
 
     chkpts_nums = sorted(chkpts_nums)
-    import ipdb; ipdb.set_trace()
     # If test then pick only the last checkpoints.
     if test:
         chkpts_nums = [chkpts_nums[-1]]
@@ -183,39 +182,14 @@ def rollout_batch(test=False, experiment_dir=None):
         num_processors = processors_total
         print(f'Number of processors downgraded to {num_processors}\n')
 
-    # Read rollouts arguments from rollouts.config file.
-    rollouts_config = configparser.ConfigParser()
-    rollouts_config.read( 'rollouts.config')
-    num_rollouts = int(rollouts_config.get('rollouts_args', 'num-rollouts'))
-    rollouts_config.remove_option('rollouts_args', 'num-rollouts')
+    # Override rollouts config files with test.config file parameters.
+    test_config = configparser.ConfigParser()
+    test_config.read('test.config')
 
-    if test:
-        # Override rollouts config files with test.config file parameters.
-        test_config = configparser.ConfigParser()
-        test_config.read('test.config')
+    num_rollouts = int(test_config.get('test_args', 'num-rollouts'))
+    rollout_time = test_config.get('test_args', 'rollout-time')
 
-        num_rollouts = int(test_config.get('test_args', 'num-rollouts'))
-        rollout_time = test_config.get('test_args', 'rollout-time')
-
-        # Overwrite defaults.
-        rollouts_config.set('rollouts_args', 'rollout-time', rollout_time)
-
-        token = 'test'
-
-        # Test mode defaults below (DO NOT CHANGE THESE).
-        # Write .xml files for test plots creation.
-        rollouts_config.set('rollouts_args', 'sumo-emission', str(True))
-
-    else:
-
-        token = 'rollouts'
-
-        # Non-test mode defaults below (DO NOT CHANGE THESE).
-        # Do not write .xml files due to performance and memory issues.
-        rollouts_config.set('rollouts_args', 'sumo-emission', str(False))
-
-    rollout_time = rollouts_config.get('rollouts_args', 'rollout-time')
-    print(f'\nArguments (jobs/{token}.py):')
+    print(f'\nArguments (jobs/test.py):')
     print('-------------------------')
     print(f'Experiment dir: {batch_path}')
     print(f'Number of processors: {num_processors}')
@@ -239,21 +213,21 @@ def rollout_batch(test=False, experiment_dir=None):
         # with the respective seed. These config
         # files are stored in a temporary directory.
         rollouts_cfg_paths = []
-        cfg_key = "rollouts_args"
+        cfg_key = "test_args"
         for cfg in custom_configs:
             run_path, chkpt_num = cfg[0]
             seed = cfg[1]
 
             # Setup custom rollout settings.
-            rollouts_config.set(cfg_key, "run-path", str(run_path))
-            rollouts_config.set(cfg_key, "chkpt-number", str(chkpt_num))
-            rollouts_config.set(cfg_key, "seed", str(seed))
+            test_config.set(cfg_key, "run-path", str(run_path))
+            test_config.set(cfg_key, "chkpt-number", str(chkpt_num))
+            test_config.set(cfg_key, "seed", str(seed))
             
             # Write temporary train config file.
             cfg_path = tmp_path / f'rollouts-{run_path.name}-{chkpt_num}-{seed}.config'
             rollouts_cfg_paths.append(str(cfg_path))
             with cfg_path.open('w') as fw:
-                rollouts_config.write(fw)
+                test_config.write(fw)
 
         # rvs: directories' names holding experiment data
         if num_processors > 1:

@@ -172,10 +172,11 @@ def main(train_config_path=None):
         os.makedirs(chkpt_dir, exist_ok=True)
         if (eng.get_current_time() + 1) % EPISODE == 0:
             eng.reset()
-            chkpt_dir = Path(chkpt_dir) / str(int(eng.get_current_time() + 1))
+            chkpt_dir = Path(chkpt_dir)
+            chkpt_num = str(int(eng.get_current_time() + 1))
             for a_cat in a_cats:
                 os.makedirs(chkpt_dir, exist_ok=True)
-                a_cat.save(file_dir=chkpt_dir)
+                a_cat.save_checkpoint(chkpt_dir, chkpt_num)
                 eng.set_tl_phase(a_cat.tl_id, 0)
 
 

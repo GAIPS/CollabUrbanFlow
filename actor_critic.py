@@ -23,17 +23,18 @@ def gen_0_dict():
 
 class ACAT(object):
     """ """
-    def __init__(self,
-                     tl_id,
-                     num_phases,
-                     wave,
-                     approx_calc=None,
-                     yellow_time=5,
-                     alpha=0.15,
-                     beta=0.15,
-                     decay=0.9,
-                     eps=0.9,
-                     gamma=0.99):
+    def __init__(
+            self,
+            tl_id,
+            num_phases,
+            wave,
+            approx_calc=None,
+            yellow_time=5,
+            alpha=0.15,
+            beta=0.15,
+            decay=0.9,
+            eps=0.9,
+            gamma=0.99):
 
 
         # Simulation control
@@ -71,7 +72,6 @@ class ACAT(object):
         self.reset()
 
     def compute(self):
-
         # states
         wave = self.approx(self.get_wave())
         reward = -sum(wave)
@@ -170,8 +170,10 @@ class ACAT(object):
 
     """ Serialization """
     # Serializes the object's copy -- sets get_wave to null.
-    def save(self, file_dir=""):
-        file_path = Path(file_dir) / f'{self.tl_id}.chkpt'
+    def save_checkpoint(self, chkpt_dir_path, chkpt_num):
+        class_name = type(self).__name__.lower()
+        file_path = Path(chkpt_dir_path) / chkpt_num / f'{class_name}.chkpt'  
+        file_path.parent.mkdir(exist_ok=True)
         cpy = deepcopy(self)
         with open(file_path, mode='wb') as f:
             dill.dump(cpy, f)
@@ -179,8 +181,10 @@ class ACAT(object):
 
     # deserializes object -- except for get_wave.
     @classmethod
-    def load(cls, file_path):
-        with open(file_path, mode='rb') as f:
+    def load_checkpoint(cls, chkpt_dir_path, chkpt_num):
+        class_name = cls.__name__.lower()
+        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'{class_name}.chkpt'  
+        with file_path.open(mode='rb') as f:
             new_instance = dill.load(f)
         return new_instance
 
