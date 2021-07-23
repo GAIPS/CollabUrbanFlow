@@ -13,11 +13,18 @@
 import os
 import shutil
 from pathlib import Path
+# import requi9red module
+import sys
+  
+# append the path of the
+# parent directory
+sys.path.append(Path.cwd().as_posix())
+print(sys.path)
 
-from jobs_train import train_batch as train
-from jobs_rollouts import rollout_batch as rollouts
-from train_plots import main as train_plots
-from test_plots import main as test_plots
+from jobs.train import train_batch as train
+from jobs.rollouts import rollout_batch as rollouts
+from plots.train_plots import main as train_plots
+from plots.test_plots import main as test_plots
 
 if __name__ == '__main__':
     # 1) Train agent(s).

@@ -1,7 +1,5 @@
 from collections import defaultdict
 import json
-import os
-from shutil import copyfile
 
 from datetime import datetime
 
@@ -12,10 +10,8 @@ import numpy as np
 from cityflow import Engine
 
 # TODO: Build a factory
-from actor_critic import ACAT, WAVE
+from agents.actor_critic import ACAT, WAVE
 from tile_coding import TileCodingMapper
-
-from ipdb import set_trace
 
 NUM_EPISODES=2
 EPISODE=2 * 3600
@@ -79,7 +75,7 @@ def main(run_path=None):
 
     network = train_config.get('train_args', 'network') 
     # TODO: Build agent
-    agent_type = train_config.get('agent_type', 'agent_type')
+    # agent_type = train_config.get('agent_type', 'agent_type')
 
     target_path = Path(orig_path) / 'eval'
     target_path.mkdir(exist_ok=True)
@@ -173,17 +169,6 @@ def main(run_path=None):
 
         update_emissions(eng, emissions)
         eng.next_step()
-
-        # TODO: use path
-        # chkpt_dir = f"{experiment_path}/checkpoints/"
-        # os.makedirs(chkpt_dir, exist_ok=True)
-        # if (eng.get_current_time() + 1) % EPISODE == 0:
-        #     eng.reset()
-        #     for a_cat in a_cats:
-        #         this_chkpt_dir = f"{chkpt_dir}/{a_cat.tl_id}"
-        #         os.makedirs(this_chkpt_dir, exist_ok=True)
-        #         a_cat.save(file_dir=this_chkpt_dir, chkpt_num=int((time_step + 1) / EPISODE) + 1)
-        #         eng.set_tl_phase(a_cat.tl_id, 0)
 
     # Store train info dict.
     # TODO: Turn all of this into Path standard

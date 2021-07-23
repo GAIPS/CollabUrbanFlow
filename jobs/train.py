@@ -5,7 +5,6 @@ from copy import deepcopy
 from pathlib import Path
 from datetime import datetime
 import sys
-# import os
 import time
 import json
 import tempfile
@@ -13,8 +12,8 @@ import configparser
 import multiprocessing
 import multiprocessing.pool
 
-from train  import main as train
-from decorators import processable, benchmarked
+from models.train  import main as train
+from utils.decorators import processable, benchmarked
 
 mp = multiprocessing.get_context('spawn')
 
@@ -66,7 +65,7 @@ def train_batch():
 
     # Read script arguments from run.config file.
     run_config = configparser.ConfigParser()
-    run_config.read('run.config')
+    run_config.read('config/run.config')
 
     num_processors = int(run_config.get('run_args', 'num_processors'))
     num_runs = int(run_config.get('run_args', 'num_runs'))
@@ -93,7 +92,7 @@ def train_batch():
 
     # Read train.py arguments from train.config file.
     train_config = configparser.ConfigParser()
-    train_config.read('train.config')
+    train_config.read('config/train.config')
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S.%f')
     print(f'Experiment timestamp: {timestamp}\n')
 

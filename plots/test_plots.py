@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 import seaborn as sns
 
-from utils import get_vehicles, get_throughput
+from utils.emissions import get_vehicles, get_throughput
 
 plt.style.use('ggplot')
 

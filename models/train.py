@@ -12,10 +12,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from cityflow import Engine
 
-from actor_critic import ACAT, WAVE
+from agents.actor_critic import ACAT, WAVE
 from tile_coding import TileCodingMapper
-
-from ipdb import set_trace
 
 NUM_EPISODES=2
 EPISODE=2 * 3600
@@ -24,33 +22,11 @@ EPISODE=2 * 3600
 PYTHONHASHSEED=-1
 
 
-# def update_emissions(eng, emissions):
-#     """Builds sumo like emission file"""
-#     for veh_id in eng.get_vehicles(include_waiting=False):
-#         data = eng.get_vehicle_info(veh_id)
-# 
-#         emission_dict = {
-#             'time': eng.get_current_time(),
-#             'id': veh_id,
-#             'lane': data['drivable'],
-#             'pos': float(data['distance']),
-#             'route': simple_hash(data['route']),
-#             'speed': float(data['speed']),
-#             'type': 'human',
-#             'x': 0,
-#             'y': 0
-#         }
-#         emissions.append(emission_dict)
-# 
-# def simple_hash(x):
-#     return hash(x) % (11 * 255)
-
 def build():
     pass
 
 def load():
     pass
-
 
 def main(train_config_path=None):
     # Setup config parser path.
@@ -180,26 +156,6 @@ def main(train_config_path=None):
                 eng.set_tl_phase(a_cat.tl_id, 0)
 
 
-        # eng.get_current_time()
-        # eng.get_lane_vehicle_count()
-        # eng.get_lane_waiting_vehicle_count()
-        # eng.get_lane_vehicles()
-        # eng.get_vehicle_speed()
-        # do something 
-
-    # chkpt_dir = f"{experiment_path}/checkpoint/"
-    # os.makedirs(chkpt_dir, exist_ok=True)
-    # a_cat.save(file_dir=chkpt_dir)
-    # with open('data/train_log.json', 'w') as f:
-    #     json.dump(info_dict, f)
-
-    # Store train parameters (config file). 
-    # config_parser.store_config(experiment_path / 'config')
-
-
-    # Run the experiment.
-    #info_dict = exp.run(train_args.experiment_time)
-
     # Store train info dict.
     # TODO: Turn all of this into Path standard
     logs_dir_path = Path(experiment_path) / 'logs'
@@ -209,9 +165,6 @@ def main(train_config_path=None):
     with train_log_path.open('w') as f:
         json.dump(info_dict, f)
 
-    # emission_log_path = logs_dir_path / "emission_log.json"
-    # with emission_log_path.open('w') as f:
-    #     json.dump(emissions, f)
     return str(experiment_path)
 
 if __name__ == '__main__':

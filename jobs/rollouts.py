@@ -6,7 +6,6 @@ from pathlib import Path
 import itertools
 import time
 import sys
-from os import environ
 import json
 import tempfile
 import argparse
@@ -15,8 +14,8 @@ import multiprocessing
 import multiprocessing.pool
 from collections import defaultdict
 
-from decorators import processable
-from rollouts import main as roll
+from utils.decorators import processable
+from models.rollouts import main as roll
 from utils import str2bool
 
 mp = multiprocessing.get_context('spawn')
@@ -163,7 +162,7 @@ def rollout_batch(test=False, experiment_dir=None):
     # print(rollouts_paths)
 
     run_config = configparser.ConfigParser()
-    run_config.read('run.config')
+    run_config.read('config/run.config')
 
     num_processors = int(run_config.get('run_args', 'num_processors'))
     num_runs = int(run_config.get('run_args', 'num_runs'))
@@ -184,7 +183,7 @@ def rollout_batch(test=False, experiment_dir=None):
 
     # Override rollouts config files with test.config file parameters.
     test_config = configparser.ConfigParser()
-    test_config.read('test.config')
+    test_config.read('config/test.config')
 
     num_rollouts = int(test_config.get('test_args', 'num-rollouts'))
     rollout_time = test_config.get('test_args', 'rollout-time')
