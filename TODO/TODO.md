@@ -1,6 +1,9 @@
 # Known issues
 
 [] Test plots waiting time: all or nothing.
+[] Migrate from WAVE to delay.
+[] Choose next phase.
+
 # Requirements
 ## Train
 1. network

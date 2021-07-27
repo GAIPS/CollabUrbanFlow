@@ -1,3 +1,8 @@
+""" 
+    Trains an A_CAT agent.
+
+    TODO: Make this script specific to A_CAT agent.
+"""
 from collections import defaultdict
 import json
 import os
@@ -9,42 +14,27 @@ from pathlib import Path
 from tqdm import tqdm
 import configparser
 import numpy as np
-from matplotlib import pyplot as plt
 from cityflow import Engine
 
 from agents.actor_critic import ACAT, WAVE
 from tile_coding import TileCodingMapper
 
-NUM_EPISODES=2
-EPISODE=2 * 3600
-
 # prevent randomization
 PYTHONHASHSEED=-1
+TRAIN_CONFIG_PATH = 'config/train.config'
+RUN_CONFIG_PATH = 'config/run.config'
 
-
-def build():
-    pass
-
-def load():
-    pass
-
-def main(train_config_path=None):
+def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     # Setup config parser path.
-    if train_config_path is None:
-        seed = 0
-        network = 'intersection'
-    else:
-        print(f'Loading train parameters from: {train_config_path}')
+    print(f'Loading train parameters from: {train_config_path}')
 
-        # Load config file with parameters.
-        train_config = configparser.ConfigParser()
-        train_config.read(train_config_path)
-        train_args = train_config['train_args']
-
-        # only seed
-        experiment_seed = eval(train_args['experiment_seed'])
-        seed = int(experiment_seed) if experiment_seed  is not None else 0
-        network = train_args['network']
+    # Load train config file with parameters.
+    train_config = configparser.ConfigParser()
+    train_config.read(train_config_path)
+    train_args = train_config['train_args']
+    network = train_args['network']
+    experiment_time = int(train_args['experiment_time'])
+    experiment_save_agent_interval = int(train_args['experiment_save_agent_interval'])
 
     # Parse train parameters.
     config_file_path = Path(f'data/networks/{network}/config.json')
@@ -107,12 +97,13 @@ def main(train_config_path=None):
 
     info_dict = defaultdict(lambda : [])
     emissions = []
-    for time_step in tqdm(range(int(EPISODE * NUM_EPISODES))):
+    for time_step in tqdm(range(experiment_time)):
         obs_dict = {}
         state_dict = {}
         action_dict = {}
         reward_dict = {}
-        time_episode = time_step % EPISODE
+        time_episode = time_step % experiment_save_agent_interval
+        # independent learners loop.
         for a_cat in a_cats:
             num_phases, tl_id, obser = a_cat.num_phases, a_cat.tl_id, a_cat.get_wave()
 
@@ -146,7 +137,7 @@ def main(train_config_path=None):
         # TODO: use path
         chkpt_dir = f"{experiment_path}/checkpoints/"
         os.makedirs(chkpt_dir, exist_ok=True)
-        if (eng.get_current_time() + 1) % EPISODE == 0:
+        if time_episode == experiment_save_agent_interval - 1:
             eng.reset()
             chkpt_dir = Path(chkpt_dir)
             chkpt_num = str(int(eng.get_current_time() + 1))
@@ -168,4 +159,4 @@ def main(train_config_path=None):
     return str(experiment_path)
 
 if __name__ == '__main__':
-    main(train_config_path='train.config')
+    main(train_config_path='config/train.config')

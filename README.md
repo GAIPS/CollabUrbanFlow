@@ -20,5 +20,9 @@ Is a set of reinforcement learning based adaptive traffic signal control systems
 # Getting Started
 
 1. Install [cityflow](https://github.com/cityflow-project/CityFlow).
-2. Run >pip install -r requirements.txt.
+2. Run:
+	> pip install -r requirements.txt.
+3. Invoke from the project's root directory:
+	> python jobs/run.py
+
 
