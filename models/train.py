@@ -16,7 +16,8 @@ import configparser
 import numpy as np
 from cityflow import Engine
 
-from agents.actor_critic import ACAT, WAVE
+from agents.actor_critic import ACAT
+from converters import WAVE
 from tile_coding import TileCodingMapper
 
 # prevent randomization
@@ -140,7 +141,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
         if time_episode == experiment_save_agent_interval - 1:
             eng.reset()
             chkpt_dir = Path(chkpt_dir)
-            chkpt_num = str(int(eng.get_current_time() + 1))
+            chkpt_num = str(time_step)
             for a_cat in a_cats:
                 os.makedirs(chkpt_dir, exist_ok=True)
                 a_cat.save_checkpoint(chkpt_dir, chkpt_num)

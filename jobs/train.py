@@ -12,6 +12,9 @@ import configparser
 import multiprocessing
 import multiprocessing.pool
 
+
+import sys
+sys.path.append(Path.cwd().as_posix())
 from models.train  import main as train
 from utils.decorators import processable, benchmarked
 
