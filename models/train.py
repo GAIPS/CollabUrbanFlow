@@ -3,25 +3,28 @@
 
     TODO: Make this script specific to A_CAT agent.
 """
+import json, os, sys
 from collections import defaultdict
-import json
-import os
+from pathlib import Path
 from shutil import copyfile
+# FIXME: DEBUG
+# append the path of the
+# parent directory
+sys.path.append(Path.cwd().as_posix())
+print(sys.path)
 
 from datetime import datetime
 
-from pathlib import Path
 from tqdm import tqdm
 import configparser
 import numpy as np
 from cityflow import Engine
 
 from agents.actor_critic import ACAT
-from converters import WAVE
-from tile_coding import TileCodingMapper
+from converters import DelayConverter
+# from tile_coding import TileCodingMapper
 
 # prevent randomization
-PYTHONHASHSEED=-1
 TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
 
@@ -65,87 +68,88 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     copyfile(flow_file_path, save_dir_path / 'flow.json')
     copyfile(roadnet_file_path, save_dir_path / 'roadnet.json')
     with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
-    # Build agents
-    intersections = [item for item in roadnet['intersections'] if not item['virtual']]
 
-    # TODO: prepare intersection
-    a_cats = []
-    phases_per_edges = {}
-    p = 0
-    for intersection in intersections:
-        lightphases = intersection['trafficLight']['lightphases']
-        for linkids in lightphases:
-            if any(linkids['availableRoadLinks']):
-                linkids = linkids['availableRoadLinks']
-                edges = []
-                for linkid in linkids:
-                    edgeid = intersection['roadLinks'][linkid]['startRoad']
-                    if edgeid not in edges: edges.append(edgeid)
-                phases_per_edges[p] = edges
-                p += 1
-
-
-        tl_id = intersection['id']
-        num_phases = len(phases_per_edges)
-        # TODO: WAVE is the function approximator.
-        # TODO: replace by delay calculator.
-        wave = WAVE(eng, phases_per_edges)
-        # TODO: TileCoding must receive the capacities 
-        mapper = TileCodingMapper(len(phases_per_edges), 1)
-        acat = ACAT(tl_id, num_phases, wave, mapper)
-        a_cats.append(acat)
-
+    dc = DelayConverter(roadnet, eng)
+    acat = ACAT(dc.phases)
 
     info_dict = defaultdict(lambda : [])
-    emissions = []
-    for time_step in tqdm(range(experiment_time)):
-        obs_dict = {}
-        state_dict = {}
-        action_dict = {}
-        reward_dict = {}
-        time_episode = time_step % experiment_save_agent_interval
-        # independent learners loop.
-        for a_cat in a_cats:
-            num_phases, tl_id, obser = a_cat.num_phases, a_cat.tl_id, a_cat.get_wave()
 
-            # Must come before compute otherwise will miss next_change.
-            phase_id, next_change = a_cat.phase_ctrl
-            state_dict[tl_id], action_dict[tl_id], reward_dict[tl_id] = a_cat.compute()
-            obs_dict[tl_id] = [int(obs) for obs in obser]
+    min_green = 5
+    max_green = 90
+    yellow = 5
+    s_prev = None
+    a_prev = None
+    for time_counter in tqdm(range(experiment_time)):
+        step_counter = time_counter % experiment_save_agent_interval
 
-            #print(time_step, phase_id, next_change)
-            if time_episode == (next_change - 5): # only visits "odd" phases (yellow)
-                eng.set_tl_phase(a_cat.tl_id, (2 * phase_id + 1) % (2 * num_phases))
-            elif time_episode == next_change: # Only visits even phases
-                eng.set_tl_phase(a_cat.tl_id, (2 * phase_id) % (2 * num_phases))
+        decision_step = step_counter % 5 == 0 
+        if decision_step and step_counter >= 5:
+            # State: is composed by the internal state and delay.
+            # internal state is affected by environment conditions
+            # or by yellew and green rules.
+            state, exclude_actions = dc.convert()
+            actions = acat.act(state, exclude_actions=exclude_actions)
+            dc.update(actions)
 
-            # save time_step
-            # if time_episode % save_agent_interval == 0:
-            #     pass
+            if s_prev is None and a_prev is None:
+                s_prev = state
+                a_prev = actions
 
-        sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
-        num_vehicles = eng.get_vehicle_count()
-        info_dict["rewards"].append(reward_dict)
-        info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-        info_dict["vehicles"].append(num_vehicles)
-        info_dict["observation_spaces"].append(obs_dict)
-        info_dict["actions"].append(action_dict)
-        info_dict["states"].append(state_dict)
+            else:
+                # INTERLEAVED COOPERATION
+                r_next = {tl_id: -sum(sta[2:]) for tl_id, sta in state.items()}
+                acat.update(s_prev, a_prev, r_next, state)
 
-        # update_emissions(eng, emissions)
-        eng.next_step()
+                def fn(x, u):
+                    # Switch to yellow
+                    if int(x[0]) != u: return True
+                    # First cycle ignore yellow transitions
+                    if step_counter <= min_green: return False
+                    if int(x[1])  == min_green: return True
+                    return False
 
-        # TODO: use path
-        chkpt_dir = f"{experiment_path}/checkpoints/"
-        os.makedirs(chkpt_dir, exist_ok=True)
-        if time_episode == experiment_save_agent_interval - 1:
+                def ctrl(x, u):
+                    # Switch to yellow
+                    if int(x[0]) != u: return int(2 * x[0] + 1)
+                    # Switch to green
+                    if int(x[1]) == min_green: return int(2 * x[0])
+
+                controller_actions = {
+                    tl_id: ctrl(sta, actions[tl_id])
+                    for tl_id, sta in state.items() if fn(sta, actions[tl_id])
+                }
+                for tl_id, tl_phase_id in controller_actions.items():
+                    eng.set_tl_phase(tl_id, tl_phase_id)
+                
+                sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
+                num_vehicles = eng.get_vehicle_count()
+                info_dict["rewards"].append(r_next)
+                info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+                info_dict["vehicles"].append(num_vehicles)
+                info_dict["observation_spaces"].append(state) # No function approximation.
+                info_dict["actions"].append(actions)
+                info_dict["states"].append(state)
+
+                s_prev = state
+                a_prev = actions
+
+
+
+        if step_counter == experiment_save_agent_interval - 1:
+            # TODO: use path
+            chkpt_dir = f"{experiment_path}/checkpoints/"
+            os.makedirs(chkpt_dir, exist_ok=True)
+
             eng.reset()
             chkpt_dir = Path(chkpt_dir)
-            chkpt_num = str(time_step)
-            for a_cat in a_cats:
-                os.makedirs(chkpt_dir, exist_ok=True)
-                a_cat.save_checkpoint(chkpt_dir, chkpt_num)
-                eng.set_tl_phase(a_cat.tl_id, 0)
+            chkpt_num = str(time_counter)
+            os.makedirs(chkpt_dir, exist_ok=True)
+            acat.save_checkpoint(chkpt_dir, chkpt_num)
+            for tl_id in acat.tl_ids:
+                eng.set_tl_phase(tl_id, 0)
+            dc.reset()
+        else:
+            eng.next_step()
 
 
     # Store train info dict.

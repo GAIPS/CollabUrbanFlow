@@ -10,11 +10,9 @@ import numpy as np
 from cityflow import Engine
 
 # TODO: Build a factory
-from agents.actor_critic import ACAT, WAVE
+from agents.actor_critic import ACAT
+from converters import WAVE, DelayConverter
 from tile_coding import TileCodingMapper
-
-NUM_EPISODES=2
-EPISODE=2 * 3600
 
 # prevent randomization
 PYTHONHASHSEED=-1
@@ -40,13 +38,6 @@ def update_emissions(eng, emissions):
 
 def simple_hash(x):
     return hash(x) % (11 * 255)
-
-def build():
-    pass
-
-def load():
-    pass
-
 
 def main(run_path=None):
     # Setup config parser path.

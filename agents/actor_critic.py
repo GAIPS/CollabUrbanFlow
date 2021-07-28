@@ -13,136 +13,58 @@ from pathlib import Path
 import dill
 import numpy as np
 
-A = (0, 10, 20, 30, 40, 50, 60, 70, 80, 90)
+def make_zero_dict():
+    return defaultdict(lambda : 0)
 
-def gen_0():
-    return 0
+def make_trace_dict():
+    return defaultdict(lambda: make_zero_dict())
+make_critic_dict = make_trace_dict
 
-def gen_0_dict():
-    return defaultdict(gen_0)
+def make_actor_dict():
+    return defaultdict(lambda: make_trace_dict())
 
 class ACAT(object):
-    """ """
+    """ Actor critic with eligibilty traces. 
+
+        TODO:
+            * Store internal state.
+            * Eps decay rate.
+    """
     def __init__(
             self,
-            tl_id,
-            num_phases,
-            wave,
-            approx_calc=None,
-            yellow_time=5,
+            phases,
             alpha=0.15,
             beta=0.15,
             decay=0.9,
             eps=0.9,
             gamma=0.99):
 
-
-        # Simulation control
-        self._episode = 24 * 3600
-        self._episode_time = 0
-        self._time = 0
-
         # Network
-        self._num_phases = num_phases
-        self._tl_id = tl_id
-        self._yellow_time=yellow_time
+        self._tl_ids = [k for k in phases.keys()]
+        self._phases = phases
 
         # Params
-        self._alpha=alpha
-        self._beta=beta
-        self._decay=decay
-        self._eps=eps
-        self._gamma=gamma
-
-        # Approximator
-        self.get_wave = wave
-        self._approx_calc = approx_calc
+        self._alpha = alpha
+        self._beta = beta
+        self._decay = decay
+        self._eps = eps
+        self._gamma = gamma
 
         # Critic
-        self._value = defaultdict(gen_0)
-        self._critic_trace = defaultdict(gen_0)
+        self._value = make_critic_dict()
+        self._critic_trace = make_trace_dict()
 
         # Actor
-        self._policy = defaultdict(gen_0_dict)
-        self._actor_trace = defaultdict(gen_0)
-
-        # Output
-        self._rewards = []
-        self._experience = {}
-        self.reset()
-
-    def compute(self):
-        # states
-        wave = self.approx(self.get_wave())
-        reward = -sum(wave)
-        wave = (self.phase,) + wave
-
-        # Update actor-critic condition
-        if self._prev_wave is not None:
-            delta = reward + self._gamma * self._value[wave] - self._value[self._prev_wave]
-            # Update trace
-            for s in self._value:
-                self._critic_trace[s] *= self._gamma * self._decay
-                if s == wave: self._critic_trace[s] += 1
-
-                for a in A:
-                    self._actor_trace[(s, a)] *= self._gamma * self._decay
-                    if wave == s and a == self._curr_action: self._actor_trace[(s, a)] += 1
-                    # Update actor
-                    self._policy[s][a] += self._beta * delta * self._actor_trace[(s, a)]
-                # Update critic
-                self._value[s] += self._alpha * delta  * self._critic_trace[s]
-
-
-        # Register updates.
-        ret = (wave, self.action, reward)
-
-        # Select action.
-        if  self._episode_time == self._next_phase_time:
-            act = self.act(wave, self._episode_time, approx=False)
-            if np.random.rand() < self._eps:
-                act = np.random.choice([a for a in A if a != act])
-            self._curr_action = act
-            self._curr_phase  = (self._curr_phase + 1) % self._num_phases
-            self._next_phase_time  = self._episode_time + act + self._yellow_time - 1
-
-        self._prev_wave = wave
-        self._episode_time += 1
-
-        # Global simulation time.
-        if self._episode_time % self._episode==0:
-            self.reset()
-        return ret
-
-    # Should not be called from without.
-    def reset(self):
-        self._curr_phase = 0
-        self._curr_action = np.random.choice(A).astype(int)
-        self._next_phase_time = self._curr_action + self._yellow_time - 1
-        self._prev_wave = None
-        self._time += self._episode_time
-        self._eps += epsilon_decay(self._time / self._episode)
-        self._episode_time = 0
+        self._policy = make_actor_dict()
+        self._actor_trace = make_trace_dict()
 
     @property
-    def phase(self):
-        return int(self._curr_phase)
+    def tl_ids(self):
+        return self._tl_ids
 
     @property
-    def next_phase_time(self):
-        return int(self._next_phase_time)
-
-    @property
-    def phase_ctrl(self):
-        return self.phase, self.next_phase_time
-
-    @property
-    def num_phases(self):   # non-yellow phases
-        return int(self._num_phases)
-
-    @property
-    def tl_id(self):   # non-yellow phases
-        return self._tl_id
+    def phases(self):  
+        return self._phases
 
     @property
     def value(self):
@@ -152,21 +74,52 @@ class ACAT(object):
     def policy(self):
         return self._policy
 
-    @property
-    def action(self):
-        return int(self._curr_action)
 
     """ Agent act: supports rollouts"""
-    def act(self, state, episode_time, approx=True):
-        wave = (self.phase,) + self.approx(state) if approx else state
-        act, _ = max(self.policy[wave].items(), key=itemgetter(1))
-        return int(act)
+    def act(self, state, exclude_actions=set({})):
+        actions = {}
+        for _id, _state in state.items(): 
+            if _id in exclude_actions:
+                action = _state[0]
+            else:
+                policy = self.policy[_id][_state] 
+                if any(policy): 
+                    action, _ = max(policy.items(), key=itemgetter(1))
+                    if np.random.rand() < self._eps:
+                        action = np.random.choice([a for a in self.phases[_id] if a != action])
+                else:
+                    action = np.random.choice([a for a in self.phases[_id]])
+            actions[_id] = int(action)
+        return actions 
 
-    """ Function approximation"""
-    def approx(self, wave):
-        if self._approx_calc is None: return wave
-        npywv = self._approx_calc.map(wave)
-        return tuple(npywv[0].tolist())
+    """ Agent update: with eligibility traces"""
+    def update(self, s_prev, a_prev, r_next, s_next):
+        # Update actor-critic condition
+        if s_prev is not None:
+            for tl_id in self.tl_ids:
+                # Create aliases
+                value = self.value[tl_id]
+                policy = self.policy[tl_id]
+                actor_trace = self._actor_trace[tl_id]
+                critic_trace = self._critic_trace[tl_id]
+                reward = r_next[tl_id]
+                state_prev = s_prev[tl_id]
+                state_next = s_next[tl_id]
+
+
+                delta = reward + self._gamma * value[state_next] - value[state_prev]
+                # Update trace
+                for s in value:
+                    critic_trace[s] *= self._gamma * self._decay
+                    if s == state_next: critic_trace[s] += 1
+
+                    for a in self.phases[tl_id]:
+                        actor_trace[(s, a)] *= self._gamma * self._decay
+                        if state_next == s and a == a_prev: actor_trace[(s, a)] += 1
+                        # Update actor
+                        policy[s][a] += self._beta * delta * actor_trace[(s, a)]
+                    # Update critic
+                    value[s] += self._alpha * delta  * critic_trace[s]
 
     """ Serialization """
     # Serializes the object's copy -- sets get_wave to null.
