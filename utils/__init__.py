@@ -1,3 +1,8 @@
+import numpy as np
+
+def points2length(p1, p2):
+    return round(np.sqrt((p1['x'] - p2['x'])**2 + (p1['y'] - p2['y'])**2), 4)
+
 def str2bool(v, exception=None):
     if isinstance(v, bool):
         return v

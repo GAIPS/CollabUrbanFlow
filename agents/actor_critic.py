@@ -67,6 +67,10 @@ class ACAT(object):
         return self._phases
 
     @property
+    def approximator(self):  
+        return self._approximator
+
+    @property
     def value(self):
         return self._value
 

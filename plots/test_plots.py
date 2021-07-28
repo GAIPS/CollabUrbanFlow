@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 
 import seaborn as sns
 
+from utils import points2length
 from utils.emissions import get_vehicles, get_throughput
 
 plt.style.use('ggplot')
@@ -23,8 +24,6 @@ FIGURE_Y = 4.0
 CONGESTED_INTERVAL = [28800.0, 32400.0] # 08h00 - 09h00
 FREE_FLOW_INTERVAL = [79200.0, 82800.0] # 22h00 - 23h00
 
-def points2length(p1, p2):
-    return round(np.sqrt((p1['x'] - p2['x'])**2 + (p1['y'] - p2['y'])**2), 4)
 
 def get_arguments():
     parser = argparse.ArgumentParser(

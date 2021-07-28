@@ -1,37 +1,111 @@
-""" Numpy tile_coding
+"""Value function approximators.
+
+    TODO:
+        * Remove loop on roadnet (also used on converters class).
+    
     References:
     ---
     https://towardsdatascience.com/reinforcement-learning-tile-coding-implementation-7974b600762b
+    https://cityflow.readthedocs.io/en/latest/roadnet.html
+    https://cityflow.readthedocs.io/en/latest/flow.html
 """
 import numpy as np
-from ipdb import set_trace
+from utils import points2length
 
-class TileCodingMapper(object):
+class TileCodingApproximator(object):
     """Thin wrapper around numpy tiling procedures"""
+    def __init__(self, roadnet, flows, num_tilings=1, num_tiles=5,
+                 min_green=5, yellow=5, max_green=90):
+        """Initiatializes a TileCodingApproximator
 
-    def __init__(self, num_phases, num_tilings, num_tiles=5, feature_bounds=[16, 45]):
-        """
-            num_phases: int
-            num_tilings: int
-            feature_bounds: list<int>
-            TODO: receive phase_capacitites and action to estimate feat_range.
-        """
-        if len(feature_bounds) != num_phases:
-            raise ValueError('len(feature_bounds) == num_phases.')
+            Reads roadnet and flows and computes the feature_bounds
+            Target towards delay base
 
+            Params:
+            -------
+            * roadnet: dict
+                https://cityflow.readthedocs.io/en/latest/roadnet.html
+
+            * flows: dict
+                https://cityflow.readthedocs.io/en/latest/flow.html
+
+            Returns:
+            --------
+            * tile_coding: object
+
+        """
+        # Signal plan constraints.
+        self.yellow = yellow
+        self.min_green = min_green
+        self.max_green = max_green
+
+        # Flows determine the min. length of the vehicles.
+        # min. length --> generates the maximum capacity.
+        vehlen = min([flow['vehicle']['length'] for flow in flows])
+        vehgap = min([flow['vehicle']['minGap'] for flow in flows])
+        print(vehlen, vehgap)
+        
+        # Roadnet determine the capacity.
+        self.capacities = {}
+        self.tl_ids = []
+        self.tilings = {}
+
+        intersections = [intr for intr in roadnet['intersections'] if not intr['virtual']]
+        roads = roadnet['roads']
+        for intersection in intersections:
+            lightphases = intersection['trafficLight']['lightphases']
+            p = 0
+            tl_id = intersection['id']
+            capacities = {}
+            for linkids in lightphases:
+                if any(linkids['availableRoadLinks']):
+                    linkids = linkids['availableRoadLinks']
+                    capacity = 0
+                    for linkid in linkids:
+                        # startRoad should be the incoming links.
+                        edgeid = intersection['roadLinks'][linkid]['startRoad']
+                        capacity += sum([
+                            points2length(*road['points'])
+                            for road in roads if road['id'] == edgeid
+                        ])
+
+                    capacities[p] = int(capacity / (vehlen + vehgap))
+                    p += 1
+            self.capacities[tl_id] = capacities
+            self.tl_ids.append(tl_id) 
+            feature_bounds = [int(cap / 2) for cap in capacities.values()] 
+            self.tilings[tl_id] = self.create_tilings(num_tilings, num_tiles, feature_bounds)
+            
+
+    def create_tilings(self, num_tilings, num_tiles=5, feature_bounds=[16, 45]):
+        """
+        """
         if num_tilings > 1: raise ValueError('Must correct me!')
         if num_tilings == 1:
             offsets = [[0] * len(feature_bounds)]
 
-        # num_tilings is the number of output features
         # TODO: verify num_phases * num_tilings
-        bins =[[num_tiles for _ in range(num_phases)]]
+        bins =[[num_tiles for _ in range(len(feature_bounds))]]
         feature_ranges =[[0, fb] for fb in feature_bounds]
+        return create_tilings(feature_ranges, num_tilings, bins, offsets)
 
-        self.tilings = create_tilings(feature_ranges, num_tilings, bins, offsets)
-
-    def map(self, state):
-        return get_tile_coding(state, self.tilings)
+    def approximate(self, observations):
+        ret = {}
+        for tl_id, obs in observations.items():
+            state = [obs[0]]
+            if (obs[1] <= self.min_green + self.yellow):
+                state.append(0)
+            elif (obs[1] <= int((self.min_green + self.max_green)) / 3):
+                state.append(1)
+            elif (obs[1] <= int((self.min_green + self.max_green)) / 2):
+                state.append(2)
+            else:
+                state.append(3)
+            tc = get_tile_coding(obs[2:], self.tilings[tl_id]). \
+                 reshape(-1).astype(int).tolist()
+            state += tc
+            ret[tl_id] = tuple([int(sta) for sta in state])
+        return ret
 
 def create_tiling(feat_range, bins, offset):
     """

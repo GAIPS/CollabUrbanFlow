@@ -85,7 +85,7 @@ class DelayConverter(object):
     #TODO: Make a decorator to log.
     # Call this right before agent#act
     def convert(self):
-        state = {}
+        observations = {}
         exclude_actions = set({})
 
         step_counter = int(self.engine.get_current_time())
@@ -131,9 +131,9 @@ class DelayConverter(object):
                     edge_vels = [vels[idv] for idv in ids[edge]]
                     phase_delays += [delay(vel / max_speed) for vel in edge_vels]
                 delays.append(np.round(sum(phase_delays), 4))
-            state[tl_id] = (active_phase, active_time) + tuple(delays)
-        self.log[step_counter] = deepcopy(state)
-        return state, exclude_actions
+            observations[tl_id] = (active_phase, active_time) + tuple(delays)
+        self.log[step_counter] = deepcopy(observations)
+        return observations, exclude_actions
 
     # Call this right after agent#act
     # updates traffic conditions due to agent action.

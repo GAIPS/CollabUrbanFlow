@@ -22,7 +22,7 @@ from cityflow import Engine
 
 from agents.actor_critic import ACAT
 from converters import DelayConverter
-# from tile_coding import TileCodingMapper
+from approximators.tile_coding import TileCodingApproximator
 
 # prevent randomization
 TRAIN_CONFIG_PATH = 'config/train.config'
@@ -48,9 +48,9 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     np.random.seed(seed)
     eng.set_random_seed(seed)
-    with roadnet_file_path.open() as f: roadnet = json.load(f)
     with config_file_path.open() as f: config = json.load(f)
-
+    with flow_file_path.open() as f: flows = json.load(f)
+    with roadnet_file_path.open() as f: roadnet = json.load(f)
 
     timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
     experiment_path =  f'data/emissions/intersection_{timestamp}'
@@ -70,6 +70,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
 
     dc = DelayConverter(roadnet, eng)
+    approx = TileCodingApproximator(roadnet, flows)
     acat = ACAT(dc.phases)
 
     info_dict = defaultdict(lambda : [])
@@ -87,7 +88,8 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             # State: is composed by the internal state and delay.
             # internal state is affected by environment conditions
             # or by yellew and green rules.
-            state, exclude_actions = dc.convert()
+            observations, exclude_actions = dc.convert()
+            state = approx.approximate(observations)
             actions = acat.act(state, exclude_actions=exclude_actions)
             dc.update(actions)
 
@@ -97,7 +99,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
             else:
                 # INTERLEAVED COOPERATION
-                r_next = {tl_id: -sum(sta[2:]) for tl_id, sta in state.items()}
+                r_next = {tl_id: -sum(obs[2:]) for tl_id, obs in observations.items()}
                 acat.update(s_prev, a_prev, r_next, state)
 
                 def fn(x, u):
@@ -126,7 +128,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
                 info_dict["rewards"].append(r_next)
                 info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
                 info_dict["vehicles"].append(num_vehicles)
-                info_dict["observation_spaces"].append(state) # No function approximation.
+                info_dict["observation_spaces"].append(observations) # No function approximation.
                 info_dict["actions"].append(actions)
                 info_dict["states"].append(state)
 
