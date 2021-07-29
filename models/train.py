@@ -11,7 +11,7 @@ from shutil import copyfile
 # append the path of the
 # parent directory
 sys.path.append(Path.cwd().as_posix())
-print(sys.path)
+# print(sys.path)
 
 from datetime import datetime
 
@@ -20,7 +20,7 @@ import configparser
 import numpy as np
 from cityflow import Engine
 
-from agents.actor_critic import ACAT
+from agents.actor_critic import ACAT, epsilon_decay
 from converters import DelayConverter
 from approximators.tile_coding import TileCodingApproximator
 
@@ -149,7 +149,11 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             acat.save_checkpoint(chkpt_dir, chkpt_num)
             for tl_id in acat.tl_ids:
                 eng.set_tl_phase(tl_id, 0)
-            dc.reset()
+
+            s_prev = None
+            a_prev = None
+            num_episodes = time_counter // experiment_save_agent_interval + 1
+            acat.eps += epsilon_decay(num_episodes)
         else:
             eng.next_step()
 

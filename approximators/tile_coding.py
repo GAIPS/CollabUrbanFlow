@@ -43,7 +43,6 @@ class TileCodingApproximator(object):
         # min. length --> generates the maximum capacity.
         vehlen = min([flow['vehicle']['length'] for flow in flows])
         vehgap = min([flow['vehicle']['minGap'] for flow in flows])
-        print(vehlen, vehgap)
         
         # Roadnet determine the capacity.
         self.capacities = {}

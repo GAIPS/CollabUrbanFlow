@@ -67,10 +67,6 @@ class ACAT(object):
         return self._phases
 
     @property
-    def approximator(self):  
-        return self._approximator
-
-    @property
     def value(self):
         return self._value
 
@@ -78,6 +74,13 @@ class ACAT(object):
     def policy(self):
         return self._policy
 
+    @property
+    def eps(self):
+        return self._eps
+
+    @eps.setter 
+    def eps(self, eps):
+        self._eps = eps
 
     """ Agent act: supports rollouts"""
     def act(self, state, exclude_actions=set({})):
@@ -146,8 +149,8 @@ class ACAT(object):
         return new_instance
 
 def epsilon_decay(num_episodes):
-    if num_episodes > 0 and num_episodes <= 15: return -(0.8 / 15)
-    if num_episodes == 16: return -0.1
+    if num_episodes > 0 and num_episodes <= 25: return -round((0.8 / 25), 4)
+    if num_episodes == 26: return -0.1
     return 0
 
 

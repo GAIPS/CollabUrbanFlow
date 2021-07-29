@@ -130,7 +130,7 @@ class DelayConverter(object):
                     max_speed = max_speeds[edge]
                     edge_vels = [vels[idv] for idv in ids[edge]]
                     phase_delays += [delay(vel / max_speed) for vel in edge_vels]
-                delays.append(np.round(sum(phase_delays), 4))
+                delays.append(round(float(sum(phase_delays)), 4))
             observations[tl_id] = (active_phase, active_time) + tuple(delays)
         self.log[step_counter] = deepcopy(observations)
         return observations, exclude_actions
@@ -149,4 +149,3 @@ class DelayConverter(object):
 
 def delay(x):
     return np.exp(-5 * x)
-
