@@ -1,8 +1,9 @@
 # Known issues
 
 [] Test plots waiting time: all or nothing.
-[] Migrate from WAVE to delay.
+[x] Migrate from WAVE to delay.
 [] Choose next phase.
+[x] Train plots update.
 
 # Requirements
 ## Train

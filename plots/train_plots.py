@@ -11,6 +11,7 @@
     The output plots will go into a folder named 'plots', created inside
     the given experiment root folder.
 """
+from collections import defaultdict
 import os
 import json
 import argparse
@@ -25,7 +26,6 @@ import statsmodels.api as sm
 import matplotlib
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
-import seaborn as sns
 plt.style.use('ggplot')
 
 
@@ -61,6 +61,59 @@ def get_arguments():
     return parser.parse_args()
 
 
+def from_json_to_dataframe(data):
+    ''' Converts the json into a multi-index column. 
+
+    FIXME:
+    ------
+    * Convert into episodic.
+    * Make batch.
+
+    Params:
+    ------
+    * data: dict<str, list<dict<str, object>>
+    Example: > data
+                          rewards  velocities  vehicles   actions    
+    0   {'247123161': -0.3281}    9.191060        10     {'247123161': 0}  
+    1   {'247123161': -4.3606}    6.466366        13     {'247123161': 0}  
+    2   {'247123161': -8.0186}    3.801833        12     {'247123161': 1}  
+    3  {'247123161': -10.2113}    3.338875        16     {'247123161': 1}  
+    4  {'247123161': -12.3408}    1.936568        16     {'247123161': 1}  
+ 
+        
+    Returns:
+    -------
+    * df: multi-column dataframe.
+    Example: > df.head()
+    ipdb> df.head()
+    tl_id  247123161    network          247123161
+    metric   rewards velocities vehicles   actions
+    0        -0.3281   9.191060       10         0
+    1        -4.3606   6.466366       13         0
+    2        -8.0186   3.801833       12         1
+    3       -10.2113   3.338875       16         1
+    4       -12.3408   1.936568       16         1
+
+    
+    ''' 
+    cols = ['rewards', 'velocities', 'vehicles', 'actions']
+    names = ['tl_id', 'metric']
+    data1 = defaultdict(lambda : [])
+
+    for col in cols:
+        for d in data[col]:
+            if isinstance(d, dict):
+                for k, v in d.items():
+                    data1[(k, col)].append(v)
+            else:
+                data1[('network', col)].append(d)
+
+    df = pd.DataFrame.from_dict(data1)
+    df.columns.names = names
+
+
+    return df
+
 def main(experiment_root_folder=None):
 
     print('\nRUNNING analysis/train_plots.py\n')
@@ -86,11 +139,11 @@ def main(experiment_root_folder=None):
 
     actions = []
     rewards = []
-    rewards_2 = []
+    rewards1 = []
+    rewards2 = []
     vehicles = []
     velocities = []
 
-    sampled_rewards = []
     sampled_rewards_2 = []
 
     sampled_vehicles = []
@@ -107,36 +160,26 @@ def main(experiment_root_folder=None):
         # Rewards per time-step.
         r = json_data['rewards']
         r = pd.DataFrame(r)
-        rewards.append(np.sum(r.values, axis=1))
+        rewards1.append(np.sum(r.values, axis=1))
 
         # aggregate data
-        sr = r.copy()
-        sr.index = pd.to_datetime(sr.index, unit='s')
-        key = '247123161'
-        sr = sr.resample('1min').agg({key: 'mean'})
-        sampled_rewards.append(np.sum(sr.values, axis=1))
-
-        sampled_rewards_2.append(sr.to_dict(orient='records'))
-        rewards_2.append(json_data['rewards'])
+        rewards2.append(json_data['rewards'])
 
         # Number of vehicles per time-step.
-        n_sample = len(json_data['vehicles'])
-        sampled_vehicles.append([np.mean(json_data['vehicles'][i-60:i]) for i in range(60, n_sample + 1, 60)])
         vehicles.append(json_data['vehicles'])
 
         # Vehicles' velocity per time-step.
-        sampled_velocities.append([np.mean(json_data['velocities'][i-60:i]) for i in range(60, n_sample + 1, 60)])
         velocities.append(json_data['velocities'])
 
         # Agent's actions.
         actions.append(json_data['actions'])
 
+        # df = from_json_to_dataframe(json_data)
     """
         Rewards per cycle.
         (GLOBAL: sum of the reward for all intersections).
     """
-    # rewards = np.array(rewards)
-    rewards = np.array(sampled_rewards)
+    rewards = np.array(rewards1)
 
 
     fig = plt.figure()
@@ -155,7 +198,7 @@ def main(experiment_root_folder=None):
     if rewards.shape[0] > 1:
         plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Decision Step')
     plt.ylabel('Reward')
     # plt.title('Train rewards ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
@@ -170,8 +213,8 @@ def main(experiment_root_folder=None):
     """
         Rewards per intersection.
     """
-    # dfs_rewards = [pd.DataFrame(r) for r in rewards_2]
-    dfs_rewards = [pd.DataFrame(r) for r in sampled_rewards_2]
+    dfs_rewards = [pd.DataFrame(r) for r in rewards2]
+    # dfs_rewards = [pd.DataFrame(r) for r in sampled_rewards_2]
 
     df_concat = pd.concat(dfs_rewards)
 
@@ -186,7 +229,7 @@ def main(experiment_root_folder=None):
     for col in df_rewards.columns:
         plt.plot(df_rewards[col].rolling(window=window_size).mean(), label=col)
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Decision Step')
     plt.ylabel('Reward')
     # plt.title('Rewards per intersection')
     plt.legend()
@@ -198,8 +241,8 @@ def main(experiment_root_folder=None):
         Number of vehicles per cycle.
         (GLOBAL: For all vehicles in simulation)
     """
-    # vehicles = np.array(vehicles)
-    vehicles = np.array(sampled_vehicles)
+    vehicles = np.array(vehicles)
+    # vehicles = np.array(sampled_vehicles)
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
@@ -216,7 +259,7 @@ def main(experiment_root_folder=None):
     if vehicles.shape[0] > 1:
         plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Decision Step')
     plt.ylabel('Number of vehicles')
     # plt.title('Number of vehicles ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
@@ -232,14 +275,17 @@ def main(experiment_root_folder=None):
         Vehicles' velocity per cycle.
         (GLOBAL: For all vehicles in simulation)
     """
-    velocities = np.array(sampled_velocities)
+    velocities = np.array(velocities)
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
     Y = np.average(velocities, axis=0)
     Y_std = np.std(velocities, axis=0)
-    X = np.linspace(1, velocities.shape[1], velocities.shape[1])
+    try:
+        X = np.linspace(1, velocities.shape[1], velocities.shape[1])
+    except Exception:
+        import ipdb; ipdb.set_trace()
 
     # Replace NaNs.
     Y_lowess = np.where(np.isnan(Y), 0, Y)
@@ -252,7 +298,7 @@ def main(experiment_root_folder=None):
     if velocities.shape[0] > 1:
         plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Decision Step')
     plt.ylabel('Velocity (m/s)')
     # plt.title('Train: Velocity of the vehicles ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
@@ -293,7 +339,7 @@ def main(experiment_root_folder=None):
         for col in df_actions.columns:
             plt.plot(df_actions[col].rolling(window=window_size).mean(), label=col)
 
-        plt.xlabel('Cycle')
+        plt.xlabel('Decision Step')
         plt.ylabel('Action (Phase-1 allocation)')
         # plt.title('Actions per intersection')
         plt.legend()
@@ -309,7 +355,7 @@ def main(experiment_root_folder=None):
         for col in df_actions.columns:
             plt.plot(df_actions[col], label=col)
 
-        plt.xlabel('Cycle')
+        plt.xlabel('Decision Step')
         plt.ylabel('Action (Phase-1 allocation)')
         # plt.title('Actions per intersection')
         plt.legend()
@@ -339,7 +385,7 @@ def main(experiment_root_folder=None):
         plt.ylim(-0.2,6.2)
         plt.yticks(ticks=[0,1,2,3,4,5,6], labels=['(30,70)', '(36,63)', '(43,57)', '(50,50)', '(57,43)', '(63,37)', '(70,30)'])
 
-        plt.xlabel('Cycle')
+        plt.xlabel('Decision Step')
         plt.ylabel('Action')
         # plt.title('Actions per intersection')
         plt.legend()

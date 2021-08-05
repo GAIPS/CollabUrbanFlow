@@ -30,6 +30,7 @@ if __name__ == '__main__':
     # 1) Train agent(s).
     experiment_root_path = train()
     # 2) Create train plots.
+    # experiment_root_path = 'data/emissions/20210730115536.822463'
     train_plots(experiment_root_path)
 
     # 3) Execute rollouts with last saved checkpoints (test).

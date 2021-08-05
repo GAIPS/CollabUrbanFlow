@@ -102,32 +102,32 @@ class ACAT(object):
     """ Agent update: with eligibility traces"""
     def update(self, s_prev, a_prev, r_next, s_next):
         # Update actor-critic condition
-        if s_prev is not None:
-            for tl_id in self.tl_ids:
-                # Create aliases
-                value = self.value[tl_id]
-                policy = self.policy[tl_id]
-                actor_trace = self._actor_trace[tl_id]
-                critic_trace = self._critic_trace[tl_id]
-                reward = r_next[tl_id]
-                state_prev = s_prev[tl_id]
-                state_next = s_next[tl_id]
+        for tl_id in self.tl_ids:
+            # Create aliases
+            value = self.value[tl_id]
+            policy = self.policy[tl_id]
+            actor_trace = self._actor_trace[tl_id]
+            critic_trace = self._critic_trace[tl_id]
+            reward = r_next[tl_id]
+            state_prev = s_prev[tl_id]
+            state_next = s_next[tl_id]
 
 
-                delta = reward + self._gamma * value[state_next] - value[state_prev]
-                # Update trace
-                for s in value:
-                    critic_trace[s] *= self._gamma * self._decay
-                    if s == state_next: critic_trace[s] += 1
+            delta = reward + self._gamma * value[state_next] - value[state_prev]
+            # Update trace
+            for s in value:
+                critic_trace[s] *= self._gamma * self._decay
+                if s == state_next: critic_trace[s] += 1
 
-                    for a in self.phases[tl_id]:
-                        actor_trace[(s, a)] *= self._gamma * self._decay
-                        if state_next == s and a == a_prev: actor_trace[(s, a)] += 1
-                        # Update actor
-                        policy[s][a] += self._beta * delta * actor_trace[(s, a)]
-                    # Update critic
-                    value[s] += self._alpha * delta  * critic_trace[s]
+                for a in self.phases[tl_id]:
+                    actor_trace[(s, a)] *= self._gamma * self._decay
+                    if state_next == s and a == a_prev: actor_trace[(s, a)] += 1
+                    # Update actor
+                    policy[s][a] += self._beta * delta * actor_trace[(s, a)]
+                # Update critic
+                value[s] += self._alpha * delta  * critic_trace[s]
 
+        
     """ Serialization """
     # Serializes the object's copy -- sets get_wave to null.
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):

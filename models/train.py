@@ -84,7 +84,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
         step_counter = time_counter % experiment_save_agent_interval
 
         decision_step = step_counter % 5 == 0 
-        if decision_step and step_counter >= 5:
+        if decision_step:
             # State: is composed by the internal state and delay.
             # internal state is affected by environment conditions
             # or by yellew and green rules.
@@ -103,10 +103,10 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
                 acat.update(s_prev, a_prev, r_next, state)
 
                 def fn(x, u):
-                    # Switch to yellow
-                    if int(x[0]) != u: return True
                     # First cycle ignore yellow transitions
                     if step_counter <= min_green: return False
+                    # Switch to yellow
+                    if int(x[0]) != u: return True
                     if int(x[1])  == min_green: return True
                     return False
 
@@ -114,14 +114,19 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
                     # Switch to yellow
                     if int(x[0]) != u: return int(2 * x[0] + 1)
                     # Switch to green
-                    if int(x[1]) == min_green: return int(2 * x[0])
+                    if int(x[1]) == yellow: return int(2 * x[0])
 
                 controller_actions = {
-                    tl_id: ctrl(sta, actions[tl_id])
-                    for tl_id, sta in state.items() if fn(sta, actions[tl_id])
+                    tl_id: ctrl(obs, actions[tl_id])
+                    for tl_id, obs in observations.items() if fn(obs, actions[tl_id])
                 }
+                this_observation = observations.get('247123161', {})
+                this_action = actions.get('247123161', {})
+                this_phase_id = controller_actions.get('247123161', {})
+                print(f'{time_counter}:{this_observation} --> {this_action} --> {this_phase_id}') 
                 for tl_id, tl_phase_id in controller_actions.items():
                     eng.set_tl_phase(tl_id, tl_phase_id)
+                
                 
                 sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
                 num_vehicles = eng.get_vehicle_count()
@@ -154,6 +159,8 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             a_prev = None
             num_episodes = time_counter // experiment_save_agent_interval + 1
             acat.eps += epsilon_decay(num_episodes)
+            dc.reset()
+            import ipdb; ipdb.set_trace()
         else:
             eng.next_step()
 
