@@ -105,7 +105,16 @@ def main(run_path=None):
 
     dc = DelayConverter(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
-    acat = ACAT(dc.phases)
+
+    # TODO: get_agent('A_CAT')
+    # TODO: Load agent.
+    acat = ACAT.load_checkpoint(checkpoints_dir_path, chkpt_num)
+    acat.stop()
+    # print('############################################################')
+    # print(f'Epsilon Current: {acat.eps}')
+    # print(f'Epsilon Final: {acat._eps_final}')
+    # print(f'Epsilon Explore: {acat._eps_explore}')
+    # print('############################################################')
 
     min_green = 5
     max_green = 90

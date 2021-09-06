@@ -28,26 +28,37 @@ class ACAT(object):
 
         TODO:
             * Store internal state.
-            * Eps decay rate.
     """
     def __init__(
             self,
             phases,
+            epsilon_init,
+            epsilon_final,
+            epsilon_timesteps,
+            decision_step=5,
             alpha=0.15,
             beta=0.15,
             decay=0.9,
-            eps=0.9,
             gamma=0.99):
 
         # Network
         self._tl_ids = [k for k in phases.keys()]
         self._phases = phases
 
+        # Exploration & Exploitation
+        assert epsilon_init >= epsilon_final
+        assert epsilon_timesteps > 0
+
+        self._eps = epsilon_init
+        self._eps_decrement = \
+                (epsilon_final - epsilon_init) * decision_step / epsilon_timesteps
+        self._eps_explore = True
+        self._eps_final = epsilon_final
+
         # Params
         self._alpha = alpha
         self._beta = beta
         self._decay = decay
-        self._eps = eps
         self._gamma = gamma
 
         # Critic
@@ -78,9 +89,8 @@ class ACAT(object):
     def eps(self):
         return self._eps
 
-    @eps.setter 
-    def eps(self, eps):
-        self._eps = eps
+    def stop(self):
+        self._eps_explore = False
 
     """ Agent act: supports rollouts"""
     def act(self, state, exclude_actions=set({})):
@@ -92,11 +102,13 @@ class ACAT(object):
                 policy = self.policy[_id][_state] 
                 if any(policy): 
                     action, _ = max(policy.items(), key=itemgetter(1))
-                    if np.random.rand() < self._eps:
+                    if np.random.rand() < self._eps and self._eps_explore:
                         action = np.random.choice([a for a in self.phases[_id] if a != action])
                 else:
                     action = np.random.choice([a for a in self.phases[_id]])
             actions[_id] = int(action)
+        if self.eps + self._eps_decrement > self._eps_final:
+            self._eps += self._eps_decrement
         return actions 
 
     """ Agent update: with eligibility traces"""
@@ -147,12 +159,6 @@ class ACAT(object):
         with file_path.open(mode='rb') as f:
             new_instance = dill.load(f)
         return new_instance
-
-def epsilon_decay(num_episodes):
-    if num_episodes > 0 and num_episodes <= 25: return -round((0.8 / 25), 4)
-    if num_episodes == 26: return -0.1
-    return 0
-
 
 if __name__ == '__main__':
     # TODO: Implement a main that tells us how to use the object.

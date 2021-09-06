@@ -20,7 +20,7 @@ import configparser
 import numpy as np
 from cityflow import Engine
 
-from agents.actor_critic import ACAT, epsilon_decay
+from agents.actor_critic import ACAT
 from converters import DelayConverter
 from approximators.tile_coding import TileCodingApproximator
 
@@ -39,6 +39,11 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     network = train_args['network']
     experiment_time = int(train_args['experiment_time'])
     experiment_save_agent_interval = int(train_args['experiment_save_agent_interval'])
+
+    # Epsilon 
+    epsilon_init = float(train_args['epsilon_init'])
+    epsilon_final = float(train_args['epsilon_final'])
+    epsilon_timesteps = float(train_args['epsilon_schedule_timesteps'])
 
     # Parse train parameters.
     config_file_path = Path(f'data/networks/{network}/config.json')
@@ -71,15 +76,19 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     dc = DelayConverter(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
-    acat = ACAT(dc.phases)
+    acat = ACAT(dc.phases, epsilon_init, epsilon_final, epsilon_timesteps)
 
     info_dict = defaultdict(lambda : [])
-
     min_green = 5
     max_green = 90
     yellow = 5
     s_prev = None
     a_prev = None
+    # print('############################################################')
+    # print(f'Epsilon Init: {acat.eps}')
+    # print(f'Epsilon Final: {acat._eps_final}')
+    # print(f'Epsilon Timesteps: {epsilon_timesteps}')
+    # print('############################################################')
     for time_counter in tqdm(range(experiment_time)):
         step_counter = time_counter % experiment_save_agent_interval
 
@@ -88,6 +97,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             # State: is composed by the internal state and delay.
             # internal state is affected by environment conditions
             # or by yellew and green rules.
+            # print(f'{acat.eps}')
             observations, exclude_actions = dc.convert()
             state = approx.approximate(observations)
             actions = acat.act(state, exclude_actions=exclude_actions)
@@ -158,7 +168,6 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             s_prev = None
             a_prev = None
             num_episodes = time_counter // experiment_save_agent_interval + 1
-            acat.eps += epsilon_decay(num_episodes)
             dc.reset()
         else:
             eng.next_step()
