@@ -53,7 +53,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     with roadnet_file_path.open() as f: roadnet = json.load(f)
 
     timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
-    experiment_path =  f'data/emissions/intersection_{timestamp}'
+    experiment_path =  f'data/emissions/{network}_{timestamp}'
     # TODO: replace by pathlib
     os.makedirs(experiment_path, exist_ok=True)
     print(f'Experiment: {str(experiment_path)}\n')
@@ -120,10 +120,10 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
                     tl_id: ctrl(obs, actions[tl_id])
                     for tl_id, obs in observations.items() if fn(obs, actions[tl_id])
                 }
-                this_observation = observations.get('247123161', {})
-                this_action = actions.get('247123161', {})
-                this_phase_id = controller_actions.get('247123161', {})
-                print(f'{time_counter}:{this_observation} --> {this_action} --> {this_phase_id}') 
+                # this_observation = observations.get('247123161', {})
+                # this_action = actions.get('247123161', {})
+                # this_phase_id = controller_actions.get('247123161', {})
+                # print(f'{time_counter}:{this_observation} --> {this_action} --> {this_phase_id}') 
                 for tl_id, tl_phase_id in controller_actions.items():
                     eng.set_tl_phase(tl_id, tl_phase_id)
                 
@@ -160,7 +160,6 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             num_episodes = time_counter // experiment_save_agent_interval + 1
             acat.eps += epsilon_decay(num_episodes)
             dc.reset()
-            import ipdb; ipdb.set_trace()
         else:
             eng.next_step()
 

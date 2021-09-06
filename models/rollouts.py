@@ -1,3 +1,8 @@
+""" 
+    Tests A_CAT agent.
+
+    TODO: Make file handling a decorator
+"""
 from collections import defaultdict
 import json
 
@@ -12,7 +17,7 @@ from cityflow import Engine
 # TODO: Build a factory
 from agents.actor_critic import ACAT
 from converters import WAVE, DelayConverter
-from tile_coding import TileCodingMapper
+from approximators.tile_coding import TileCodingApproximator
 
 # prevent randomization
 PYTHONHASHSEED=-1
@@ -39,10 +44,15 @@ def update_emissions(eng, emissions):
 def simple_hash(x):
     return hash(x) % (11 * 255)
 
+def make_list():
+    return []
+
+def make_info_dict():
+    return defaultdict(make_list)
+
 def main(run_path=None):
     # Setup config parser path.
-
-
+    
     # Load config file with parameters.
     rollouts_config = configparser.ConfigParser()
 
@@ -81,8 +91,10 @@ def main(run_path=None):
     
     # Build engine
     config_file_path = Path(orig_path) / 'config' / 'config.json' 
+    flow_file_path = Path(f'data/networks/{network}/flow.json')
     roadnet_file_path = Path(orig_path) / 'config' / 'roadnet.json' 
     with roadnet_file_path.open() as f: roadnet = json.load(f)
+    with flow_file_path.open() as f: flows = json.load(f)
     with config_file_path.open() as f: cfg = json.load(f)
     cfg['dir'] = f'{config_file_path.parent}/'
     with config_file_path.open('w') as f: json.dump(cfg, f)
@@ -91,72 +103,75 @@ def main(run_path=None):
     np.random.seed(seed)
     eng.set_random_seed(seed)
 
-    # Build agents
-    intersections = [item for item in roadnet['intersections'] if not item['virtual']]
+    dc = DelayConverter(roadnet, eng)
+    approx = TileCodingApproximator(roadnet, flows)
+    acat = ACAT(dc.phases)
 
-    # TODO: prepare intersection
-    a_cats = []
-    phases_per_edges = {}
-    p = 0
-    for intersection in intersections:
-        lightphases = intersection['trafficLight']['lightphases']
-        for linkids in lightphases:
-            if any(linkids['availableRoadLinks']):
-                linkids = linkids['availableRoadLinks']
-                edges = []
-                for linkid in linkids:
-                    edgeid = intersection['roadLinks'][linkid]['startRoad']
-                    if edgeid not in edges: edges.append(edgeid)
-                phases_per_edges[p] = edges
-                p += 1
+    min_green = 5
+    max_green = 90
+    yellow = 5
+    s_prev = None
+    a_prev = None
 
-
-        # tl_id = intersection['id']
-        # num_phases = len(phases_per_edges)
-        # TODO: WAVE is the function approximator.
-        # TODO: replace by delay calculator.
-        wave = WAVE(eng, phases_per_edges)
-        # TODO: TileCoding must receive the capacities 
-        mapper = TileCodingMapper(len(phases_per_edges), 1)
-        # TODO: get_agent('A_CAT')
-        # TODO: Load agent.
-        acat = ACAT.load_checkpoint(checkpoints_dir_path, chkpt_num)
-        acat.get_wave = wave
-        # acat = ACAT(tl_id, num_phases, wave, mapper)
-        a_cats.append(acat)
-
-
-    info_dict = defaultdict(lambda : [])
+    info_dict = make_info_dict()
     emissions = []
     
-    for time_step in tqdm(range(rollout_time)):
+    for time_counter in tqdm(range(rollout_time)):
         obs_dict = {}
         state_dict = {}
         action_dict = {}
         reward_dict = {}
-        time_episode = time_step % EPISODE
-        for a_cat in a_cats:
-            num_phases, tl_id, obser = a_cat.num_phases, a_cat.tl_id, a_cat.get_wave()
 
-            # Must come before compute otherwise will miss next_change.
-            phase_id, next_change = a_cat.phase_ctrl
-            state_dict[tl_id], action_dict[tl_id], reward_dict[tl_id] = a_cat.compute()
-            obs_dict[tl_id] = [int(obs) for obs in obser]
+        decision_step = time_counter % 5 == 0 
+        if decision_step:
+            # State: is composed by the internal state and delay.
+            # internal state is affected by environment conditions
+            # or by yellew and green rules.
+            observations, exclude_actions = dc.convert()
+            state = approx.approximate(observations)
+            actions = acat.act(state, exclude_actions=exclude_actions)
+            dc.update(actions)
 
-            #print(time_step, phase_id, next_change)
-            if time_episode == (next_change - 5): # only visits "odd" phases (yellow)
-                eng.set_tl_phase(a_cat.tl_id, (2 * phase_id + 1) % (2 * num_phases))
-            elif time_episode == next_change: # Only visits even phases
-                eng.set_tl_phase(a_cat.tl_id, (2 * phase_id) % (2 * num_phases))
+            if s_prev is None and a_prev is None:
+                s_prev = state
+                a_prev = actions
 
-        sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
-        num_vehicles = eng.get_vehicle_count()
-        info_dict["rewards"].append(reward_dict)
-        info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-        info_dict["vehicles"].append(num_vehicles)
-        info_dict["observation_spaces"].append(obs_dict)
-        info_dict["actions"].append(action_dict)
-        info_dict["states"].append(state_dict)
+            else:
+                # INTERLEAVED COOPERATION
+                r_next = {tl_id: -sum(obs[2:]) for tl_id, obs in observations.items()}
+                def fn(x, u):
+                    # First cycle ignore yellow transitions
+                    if time_counter <= min_green: return False
+                    # Switch to yellow
+                    if int(x[0]) != u: return True
+                    if int(x[1])  == min_green: return True
+                    return False
+
+                def ctrl(x, u):
+                    # Switch to yellow
+                    if int(x[0]) != u: return int(2 * x[0] + 1)
+                    # Switch to green
+                    if int(x[1]) == yellow: return int(2 * x[0])
+
+                controller_actions = {
+                    tl_id: ctrl(obs, actions[tl_id])
+                    for tl_id, obs in observations.items() if fn(obs, actions[tl_id])
+                }
+                # this_observation = observations.get('247123161', {})
+                # this_action = actions.get('247123161', {})
+                # this_phase_id = controller_actions.get('247123161', {})
+                # print(f'{time_counter}:{this_observation} --> {this_action} --> {this_phase_id}') 
+                for tl_id, tl_phase_id in controller_actions.items():
+                    eng.set_tl_phase(tl_id, tl_phase_id)
+                
+                sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
+                num_vehicles = eng.get_vehicle_count()
+                info_dict["rewards"].append(reward_dict)
+                info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+                info_dict["vehicles"].append(num_vehicles)
+                info_dict["observation_spaces"].append(obs_dict)
+                info_dict["actions"].append(action_dict)
+                info_dict["states"].append(state_dict)
 
         update_emissions(eng, emissions)
         eng.next_step()

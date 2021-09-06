@@ -22,29 +22,28 @@ sys.path.append(Path.cwd().as_posix())
 print(sys.path)
 
 from jobs.train import train_batch as train
-# from jobs.rollouts import rollout_batch as rollouts
+from jobs.rollouts import rollout_batch as rollouts
 from plots.train_plots import main as train_plots
-# from plots.test_plots import main as test_plots
+from plots.test_plots import main as test_plots
 
 if __name__ == '__main__':
     # 1) Train agent(s).
     experiment_root_path = train()
     # 2) Create train plots.
-    # experiment_root_path = 'data/emissions/20210730115536.822463'
     train_plots(experiment_root_path)
 
     # 3) Execute rollouts with last saved checkpoints (test).
-    # rollouts(test=True, experiment_dir=experiment_root_path)
+    rollouts(test=True, experiment_dir=experiment_root_path)
 
     # 4) Create plots with metrics plots for final agent.
-    # test_plots(experiment_root_path)
+    test_plots(experiment_root_path)
 
 
     # 5) Cleaning emissions.
     print('\nCleaning and compressing files...\n')
     experiment_root_path = Path(experiment_root_path)
-    # for csv_path in experiment_root_path.rglob('emission_log.json'):
-    #     Path(csv_path).unlink()
+    for csv_path in experiment_root_path.rglob('emission_log.json'):
+        Path(csv_path).unlink()
 
     shutil.make_archive(experiment_root_path,
                     'gztar',
