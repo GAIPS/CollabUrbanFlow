@@ -40,7 +40,7 @@ class ACAT(object):
             alpha=0.25,
             beta=0.25,
             decay=0.8,
-            gamma=0.99):
+            gamma=0.8):
 
         # Network
         self._tl_ids = [k for k in phases.keys()]
@@ -124,7 +124,6 @@ class ACAT(object):
             state_next = s_next[tl_id]
             action_prev = a_prev[tl_id]
 
-
             delta = reward + self._gamma * value[state_next] - value[state_prev]
             # Update trace
             for s in value:
@@ -138,8 +137,6 @@ class ACAT(object):
                     policy[s][a] += self._beta * delta * actor_trace[(s, a)]
                 # Update critic
                 value[s] += self._alpha * delta  * critic_trace[s]
-
-        
 
      
     """ Reset eligibilty traces """
@@ -156,7 +153,6 @@ class ACAT(object):
         cpy = deepcopy(self)
         with open(file_path, mode='wb') as f:
             dill.dump(cpy, f)
-
 
     # deserializes object -- except for get_wave.
     @classmethod
