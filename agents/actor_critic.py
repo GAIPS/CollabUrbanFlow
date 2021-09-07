@@ -5,6 +5,7 @@
     "Adaptive traffic signal control with actor-critic methods in a real-world traffic network with different traffic disruption events"
     Aslani, et al. 2017
 """
+import ipdb
 from copy import deepcopy
 from operator import itemgetter
 from collections import defaultdict
@@ -36,9 +37,9 @@ class ACAT(object):
             epsilon_final,
             epsilon_timesteps,
             decision_step=5,
-            alpha=0.15,
-            beta=0.15,
-            decay=0.9,
+            alpha=0.25,
+            beta=0.25,
+            decay=0.8,
             gamma=0.99):
 
         # Network
@@ -93,19 +94,16 @@ class ACAT(object):
         self._eps_explore = False
 
     """ Agent act: supports rollouts"""
-    def act(self, state, exclude_actions=set({})):
+    def act(self, state):
         actions = {}
         for _id, _state in state.items(): 
-            if _id in exclude_actions:
-                action = _state[0]
+            policy = self.policy[_id][_state] 
+            if any(policy): 
+                action, _ = max(policy.items(), key=itemgetter(1))
+                if np.random.rand() < self._eps and self._eps_explore:
+                    action = np.random.choice([a for a in self.phases[_id] if a != action])
             else:
-                policy = self.policy[_id][_state] 
-                if any(policy): 
-                    action, _ = max(policy.items(), key=itemgetter(1))
-                    if np.random.rand() < self._eps and self._eps_explore:
-                        action = np.random.choice([a for a in self.phases[_id] if a != action])
-                else:
-                    action = np.random.choice([a for a in self.phases[_id]])
+                action = np.random.choice([a for a in self.phases[_id]])
             actions[_id] = int(action)
         if self.eps + self._eps_decrement > self._eps_final:
             self._eps += self._eps_decrement
@@ -114,6 +112,7 @@ class ACAT(object):
     """ Agent update: with eligibility traces"""
     def update(self, s_prev, a_prev, r_next, s_next):
         # Update actor-critic condition
+
         for tl_id in self.tl_ids:
             # Create aliases
             value = self.value[tl_id]
@@ -123,23 +122,31 @@ class ACAT(object):
             reward = r_next[tl_id]
             state_prev = s_prev[tl_id]
             state_next = s_next[tl_id]
+            action_prev = a_prev[tl_id]
 
 
             delta = reward + self._gamma * value[state_next] - value[state_prev]
             # Update trace
             for s in value:
                 critic_trace[s] *= self._gamma * self._decay
-                if s == state_next: critic_trace[s] += 1
+                if s == state_prev: critic_trace[s] += 1
 
-                for a in self.phases[tl_id]:
+                for a in (0, 1):
                     actor_trace[(s, a)] *= self._gamma * self._decay
-                    if state_next == s and a == a_prev: actor_trace[(s, a)] += 1
+                    if state_prev == s and a == action_prev: actor_trace[(s, a)] += 1
                     # Update actor
                     policy[s][a] += self._beta * delta * actor_trace[(s, a)]
                 # Update critic
                 value[s] += self._alpha * delta  * critic_trace[s]
 
         
+
+     
+    """ Reset eligibilty traces """
+    def reset(self):
+        self._critic_trace = make_trace_dict()
+        self._actor_trace = make_trace_dict()
+
     """ Serialization """
     # Serializes the object's copy -- sets get_wave to null.
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
