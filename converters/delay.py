@@ -4,6 +4,8 @@
     * Controls the agent's view from the traffic light.
     * Observes traffic data and transforms into features.
     * Logs past observations
+    * TODO: Transform this into a wrapper object that keeps
+           tls states.
 
 '''
 from copy import deepcopy
@@ -16,7 +18,7 @@ def make_initial_state(phases):
     }
 
 class DelayConverter(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90):
+    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
         '''DelayCoverter constructor method.
             TODO: fill dictionary
             Params:
@@ -33,6 +35,7 @@ class DelayConverter(object):
         self.yellow = yellow
         self.min_green = min_green
         self.max_green = max_green
+        self.step_size = step_size
         self.tl_ids = []
         self.phases = {}
         self.max_speeds = {}
@@ -78,17 +81,29 @@ class DelayConverter(object):
     def engine(self, engine):
         self._engine = engine
 
+    @property
+    def is_decision_step(self):
+        return self.timestep % self.step_size == 0
+
+    @property
+    def timestep(self):
+        return int(self.engine.get_current_time()) 
+
+
     def reset(self):
+        # Agents' state
         self.log = {}
         self.log[0] = make_initial_state(self.phases)
+
+        # Environment's state
+        for tl_id in self.tl_ids:
+            self.engine.set_tl_phase(tl_id, 0)
+        self.engine.reset()
         
     #TODO: Make a decorator to log.
-    # Call this right before agent#act
-    def convert(self):
+    def observe(self):
         observations = {}
-        exclude_actions = set({})
 
-        step_counter = int(self.engine.get_current_time())
         ids = self.engine.get_lane_vehicles()
         vels = self.engine.get_vehicle_speed() 
         min_green = self.min_green
@@ -103,9 +118,9 @@ class DelayConverter(object):
         # 1) Prevent switching to a new phase before min_green.
         # 2) Prevent keeping a phase after max_green.
         def keep(x):
-            return int(s_prev[x][1]) <= (min_green + yellow)
+            return int(s_prev[x][1]) <= (self.min_green + self.yellow)
         def switch(x):
-            return int(s_prev[x][1]) >= (max_green + yellow)
+            return int(s_prev[x][1]) >= (self.max_green + self.yellow)
 
         for tl_id, phases  in self.phases.items():
             delays = []
@@ -114,15 +129,13 @@ class DelayConverter(object):
 
             # Adjust to active condition.
             if keep(tl_id) or switch(tl_id): 
-                exclude_actions = exclude_actions.union(set({tl_id}))
-
                 if switch(tl_id):
                     active_phase = (active_phase + 1) % len(phases)
                     active_time  = 0
                 else:
-                    active_time += step_counter - t_prev
+                    active_time += self.timestep - t_prev
             else:
-                active_time += step_counter - t_prev
+                active_time += self.timestep - t_prev
                 
             for phs, edges in phases.items():
                 phase_delays = []
@@ -132,20 +145,43 @@ class DelayConverter(object):
                     phase_delays += [delay(vel / max_speed) for vel in edge_vels]
                 delays.append(round(float(sum(phase_delays)), 4))
             observations[tl_id] = (active_phase, active_time) + tuple(delays)
-        self.log[step_counter] = deepcopy(observations)
-        return observations, exclude_actions
+        self.log[self.timestep] = deepcopy(observations)
+        return observations
 
-    # Call this right after agent#act
-    # updates traffic conditions due to agent action.
-    def update(self, actions):
-        # Obtain s_prev
-        step_counter = int(self.engine.get_current_time())
-        s_prev = self.log[step_counter]  # step_counter key must exist.
-        for tl_id, action in actions.items():
-            if action != s_prev[tl_id][0]:
-                s_prev[tl_id] = (action, 0) + s_prev[tl_id][2:]
-        self.log[step_counter] = s_prev
 
+    def step(self, actions={}):
+        # Handle controller actions
+        # KEEP or SWITCH phase
+        # Maps agent action to controller action
+        # G -> Y -> G -> Y
+        if self.is_decision_step: 
+            self._phase_ctl(actions)
+        self.engine.next_step()
+
+    """Performs phase control""" 
+    def _phase_ctl(self, actions):
+        controller_actions = {}
+        _observations = self.log[self.timestep]  # self.timestep key must exist.
+        for tlid, obs in _observations.items():
+            phases = self.phases[tlid]
+            current_phase, current_time = obs[:2]
+            current_action = actions[tlid]
+            if current_time == self.yellow and self.timestep > 5:
+                # transitions to green
+                controller_actions[tlid] = current_phase * 2
+
+            elif (current_time > self.yellow + self.min_green and current_action == 1) or \
+                    (current_time == self.max_green):
+                # transitions to yellow
+                controller_actions[tlid] = (current_phase * 2 + 1) % (2 * len(phases))
+
+                # adjust log
+                next_phase = (current_phase + 1) % len(phases) 
+                self.log[self.timestep][tlid] = (next_phase, 0) + obs[:2]
+
+
+        for tl_id, tl_phase_id in controller_actions.items():
+            self.engine.set_tl_phase(tlid, tl_phase_id)
 
 def delay(x):
     return np.exp(-5 * x)

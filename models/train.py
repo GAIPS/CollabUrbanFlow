@@ -3,6 +3,7 @@
 
     TODO: Make this script specific to A_CAT agent.
 """
+import ipdb
 import json, os, sys
 from collections import defaultdict
 from pathlib import Path
@@ -79,16 +80,9 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     acat = ACAT(dc.phases, epsilon_init, epsilon_final, epsilon_timesteps)
 
     info_dict = defaultdict(lambda : [])
-    min_green = 5
-    max_green = 90
-    yellow = 5
     s_prev = None
     a_prev = None
-    # print('############################################################')
-    # print(f'Epsilon Init: {acat.eps}')
-    # print(f'Epsilon Final: {acat._eps_final}')
-    # print(f'Epsilon Timesteps: {epsilon_timesteps}')
-    # print('############################################################')
+
     for time_counter in tqdm(range(experiment_time)):
         step_counter = time_counter % experiment_save_agent_interval
 
@@ -98,45 +92,19 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             # internal state is affected by environment conditions
             # or by yellew and green rules.
             # print(f'{acat.eps}')
-            observations, exclude_actions = dc.convert()
+            observations = dc.observe()
             state = approx.approximate(observations)
-            actions = acat.act(state, exclude_actions=exclude_actions)
-            dc.update(actions)
+            actions = acat.act(state) 
 
             if s_prev is None and a_prev is None:
                 s_prev = state
                 a_prev = actions
 
             else:
-                # INTERLEAVED COOPERATION
-                r_next = {tl_id: -sum(obs[2:]) for tl_id, obs in observations.items()}
+                r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
                 acat.update(s_prev, a_prev, r_next, state)
 
-                def fn(x, u):
-                    # First cycle ignore yellow transitions
-                    if step_counter <= min_green: return False
-                    # Switch to yellow
-                    if int(x[0]) != u: return True
-                    if int(x[1])  == min_green: return True
-                    return False
-
-                def ctrl(x, u):
-                    # Switch to yellow
-                    if int(x[0]) != u: return int(2 * x[0] + 1)
-                    # Switch to green
-                    if int(x[1]) == yellow: return int(2 * x[0])
-
-                controller_actions = {
-                    tl_id: ctrl(obs, actions[tl_id])
-                    for tl_id, obs in observations.items() if fn(obs, actions[tl_id])
-                }
-                # this_observation = observations.get('247123161', {})
-                # this_action = actions.get('247123161', {})
-                # this_phase_id = controller_actions.get('247123161', {})
-                # print(f'{time_counter}:{this_observation} --> {this_action} --> {this_phase_id}') 
-                for tl_id, tl_phase_id in controller_actions.items():
-                    eng.set_tl_phase(tl_id, tl_phase_id)
-                
+                    
                 
                 sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
                 num_vehicles = eng.get_vehicle_count()
@@ -149,7 +117,8 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
                 s_prev = state
                 a_prev = actions
-
+        else:
+            actions = {}
 
 
         if step_counter == experiment_save_agent_interval - 1:
@@ -157,20 +126,17 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             chkpt_dir = f"{experiment_path}/checkpoints/"
             os.makedirs(chkpt_dir, exist_ok=True)
 
-            eng.reset()
             chkpt_dir = Path(chkpt_dir)
             chkpt_num = str(time_counter)
             os.makedirs(chkpt_dir, exist_ok=True)
             acat.save_checkpoint(chkpt_dir, chkpt_num)
-            for tl_id in acat.tl_ids:
-                eng.set_tl_phase(tl_id, 0)
 
             s_prev = None
             a_prev = None
-            num_episodes = time_counter // experiment_save_agent_interval + 1
             dc.reset()
+            acat.reset()
         else:
-            eng.next_step()
+            dc.step(actions)
 
 
     # Store train info dict.
