@@ -1,15 +1,18 @@
-'''Delay: decreasing exponential with respect to maximum speed.
+'''Environment: Wrapper around engine and feature (delay) producer.
 
     * Converts microsimulator data into features.
-    * Controls the agent's view from the traffic light.
+    * Keeps the agent's view from the traffic light.
+    * Converts agent's actions into control actions.
     * Observes traffic data and transforms into features.
     * Logs past observations
-    * TODO: Transform this into a wrapper object that keeps
-           tls states.
 
 '''
+import ipdb
+from functools import lru_cache
+
 from copy import deepcopy
 import numpy as np
+from cityflow import Engine
 
 def make_initial_state(phases):
     return {
@@ -18,13 +21,14 @@ def make_initial_state(phases):
     }
 
 class Environment(object):
+
     def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
-        '''DelayCoverter constructor method.
-            TODO: fill dictionary
+        '''Environment constructor method.
             Params:
             -------
             intersection: dict
                 An non virtual intersection from roadnet.json file.
+
             engine: cityflow.Engine object
                 The microsimulator engine
 
@@ -90,6 +94,26 @@ class Environment(object):
         return int(self.engine.get_current_time()) 
 
 
+    """ Dynamic properties are cached""" 
+    @property
+    def vehicles(self):
+        return self._get_lane_vehicles(self.timestep)
+
+
+    #TODO: cache this!
+    @lru_cache
+    def _get_lane_vehicles(self, timestep):
+        return self.engine.get_lane_vehicles()
+
+    @property
+    def speeds(self):
+        return self._get_vehicle_speed(self.timestep)
+
+    #TODO: cache this!
+    @lru_cache
+    def _get_vehicle_speed(self, timestep):
+        return self.engine.get_vehicle_speed()
+
     def reset(self):
         # Agents' state
         self.log = {}
@@ -104,8 +128,8 @@ class Environment(object):
     def observe(self):
         observations = {}
 
-        ids = self.engine.get_lane_vehicles()
-        vels = self.engine.get_vehicle_speed() 
+        ids = self.vehicles
+        vels = self.speeds
         min_green = self.min_green
         max_green  = self.max_green
         yellow = self.yellow

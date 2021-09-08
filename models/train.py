@@ -106,8 +106,8 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
                     
                 
-                sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
-                num_vehicles = eng.get_vehicle_count()
+                sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
+                num_vehicles = len(env.speeds)
                 info_dict["rewards"].append(r_next)
                 info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
                 info_dict["vehicles"].append(num_vehicles)
