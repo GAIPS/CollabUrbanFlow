@@ -42,7 +42,7 @@ class Environment(object):
         self.tl_ids = []
         self.phases = {}
         self.max_speeds = {}
-        self.log = {}
+        # self.log = {}
 
         phases_per_edges = {}
         edges_max_speeds = {}
@@ -74,7 +74,7 @@ class Environment(object):
             self.max_speeds[intersection['id']] = edges_max_speeds
             self.tl_ids.append(intersection['id']) 
         if engine is not None: self.engine = engine
-        self.log[0] = make_initial_state(self.phases)
+        # self.log[0] = make_initial_state(self.phases)
 
     @property
     def engine(self):
@@ -112,82 +112,43 @@ class Environment(object):
 
     def _reset(self):
         # Agents' state
-        self.log = {}
-        self.log[0] = make_initial_state(self.phases)
+        # self.log = {}
+        # self.log[0] = make_initial_state(self.phases)
         self._internal_states = {tl_id: (0, 0) for tl_id in self.tl_ids}
 
         # Environment's state
         for tl_id in self.tl_ids:
             self.engine.set_tl_phase(tl_id, 0)
         self.engine.reset()
-        
+
+    @property
+    def observations(self):
+        return self._observations(self.timestep)
+
+    @lru_cache
+    def _observations(self, timestep):
+        active_phases = self._update_internal_states()
+        features = self._update_features()
+        return {_id: active_phases[_id] + features[_id] for _id in self.tl_ids}
+
+    # TODO: include switch
     def _update_internal_states(self):
-        # Enforce actions constraints.
-        # 1) Prevent switching to a new phase before min_green.
-        # 2) Prevent keeping a phase after max_green.
-        def keep(x):
-            return x <= (self.min_green + self.yellow)
+        for tl_id, internal  in self._internal_states.items():
+            active_phase, active_time = internal
 
-        def switch(x):
-            return x >= (self.max_green + self.yellow)
-
-        for tl_id, phases  in self.phases.items():
-            active_phase, active_time = self._internal_states[tl_id]
-
-            # Adjust to active condition.
-            if keep(active_time) or switch(active_time): 
-                if switch(active_time):
-                    assert False
-                    active_phase = (active_phase + 1) % len(phases)
-                    active_time  = 0
-                else:
-                    active_time += self.step_size if self.timestep > 0 else 0 
-            else:
-                active_time += self.step_size if self.timestep > 0 else 0 
+            active_time += self.step_size if self.timestep > 0 else 0 
             self._internal_states[tl_id] = (active_phase, active_time)
+        return self._internal_states
 
-    #TODO: Make a decorator to log.
-    def observe(self):
+    def _update_features(self):
         observations = {}
 
-        self._update_internal_states()
         ids = self.vehicles
         vels = self.speeds
-        min_green = self.min_green
-        max_green  = self.max_green
-        yellow = self.yellow
-
-        # Obtain s_prev
-        t_prev, s_prev = max(self.log.items(), key=lambda x: x[0])
-         
-
-        # Enforce actions constraints.
-        # 1) Prevent switching to a new phase before min_green.
-        # 2) Prevent keeping a phase after max_green.
-        def keep(x):
-            return int(s_prev[x][1]) <= (self.min_green + self.yellow)
-        def switch(x):
-            return int(s_prev[x][1]) >= (self.max_green + self.yellow)
 
         for tl_id, phases  in self.phases.items():
             delays = []
             max_speeds = self.max_speeds[tl_id]
-            active_phase, active_time = s_prev[tl_id][:2] 
-
-            # Adjust to active condition.
-            if keep(tl_id) or switch(tl_id): 
-                if switch(tl_id):
-                    active_phase = (active_phase + 1) % len(phases)
-                    active_time  = 0
-                else:
-                    active_time += self.timestep - t_prev
-            else:
-                active_time += self.timestep - t_prev
-            try:
-                assert self._internal_states[tl_id][0] == active_phase
-                assert self._internal_states[tl_id][1] == active_time
-            except AssertionError:
-                import ipdb; ipdb.set_trace()
                 
             for phs, edges in phases.items():
                 phase_delays = []
@@ -196,9 +157,7 @@ class Environment(object):
                     edge_vels = [vels[idv] for idv in ids[edge]]
                     phase_delays += [delay(vel / max_speed) for vel in edge_vels]
                 delays.append(round(float(sum(phase_delays)), 4))
-            observations[tl_id] = (active_phase, active_time) + tuple(delays)
-
-        self.log[self.timestep] = deepcopy(observations)
+            observations[tl_id] = tuple(delays)
         return observations
 
 
@@ -207,7 +166,7 @@ class Environment(object):
         self._reset()
         for eps in tqdm(range(episode_length)):
             if self.is_decision_step:
-                actions = yield self.observe()
+                actions = yield self.observations
             else:
                 yield
             self.step(actions)
@@ -226,8 +185,8 @@ class Environment(object):
     """Performs phase control""" 
     def _phase_ctl(self, actions):
         controller_actions = {}
-        _observations = self.log[self.timestep]  # self.timestep key must exist.
-        for tlid, obs in _observations.items():
+        # _observations = self.log[self.timestep]  # self.timestep key must exist.
+        for tlid, obs in self.observations.items():
             phases = self.phases[tlid]
             current_phase, current_time = obs[:2]
             current_action = actions[tlid]
@@ -242,7 +201,7 @@ class Environment(object):
 
                 # adjust log
                 next_phase = (current_phase + 1) % len(phases) 
-                self.log[self.timestep][tlid] = (next_phase, 0) + obs[:2]
+                # self.log[self.timestep][tlid] = (next_phase, 0) + obs[:2]
                 self._internal_states[tlid] = (next_phase, 0)
         for tl_id, tl_phase_id in controller_actions.items():
             self.engine.set_tl_phase(tlid, tl_phase_id)
