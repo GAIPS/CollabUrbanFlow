@@ -1,5 +1,4 @@
 """
-
     Python script to run full pipeline:
 
         1) jobs/train.py: train agent(s).
@@ -32,23 +31,24 @@ if __name__ == '__main__':
     # 2) Create train plots.
     train_plots(experiment_root_path)
 
+
     # 3) Execute rollouts with last saved checkpoints (test).
-    # rollouts(test=True, experiment_dir=experiment_root_path)
+    rollouts(test=True, experiment_dir=experiment_root_path)
 
     # 4) Create plots with metrics plots for final agent.
-    # test_plots(experiment_root_path)
+    test_plots(experiment_root_path)
 
 
     # 5) Cleaning emissions.
-    # print('\nCleaning and compressing files...\n')
-    # experiment_root_path = Path(experiment_root_path)
-    # for csv_path in experiment_root_path.rglob('emission_log.json'):
-    #     Path(csv_path).unlink()
+    print('\nCleaning and compressing files...\n')
+    experiment_root_path = Path(experiment_root_path)
+    for csv_path in experiment_root_path.rglob('emission_log.json'):
+        Path(csv_path).unlink()
 
-    # shutil.make_archive(experiment_root_path,
-    #                 'gztar',
-    #                 os.path.dirname(experiment_root_path),
-    #                 experiment_root_path.name)
-    # shutil.rmtree(experiment_root_path)
+    shutil.make_archive(experiment_root_path,
+                    'gztar',
+                    os.path.dirname(experiment_root_path),
+                    experiment_root_path.name)
+    shutil.rmtree(experiment_root_path)
 
     print('Experiment folder: {0}'.format(experiment_root_path))

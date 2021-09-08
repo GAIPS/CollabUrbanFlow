@@ -1,7 +1,10 @@
 """ 
     Tests A_CAT agent.
 
-    TODO: Make file handling a decorator
+    References:
+    -----------
+    * Generators
+        http://www.dabeaz.com/finalgenerator/FinalGenerator.pdf
 """
 from collections import defaultdict
 import json
@@ -9,7 +12,7 @@ import json
 from datetime import datetime
 
 from pathlib import Path
-from tqdm import tqdm
+from tqdm.auto import trange
 import configparser
 import numpy as np
 from cityflow import Engine
@@ -110,82 +113,53 @@ def main(run_path=None):
     # TODO: Load agent.
     acat = ACAT.load_checkpoint(checkpoints_dir_path, chkpt_num)
     acat.stop()
-    # print('############################################################')
-    # print(f'Epsilon Current: {acat.eps}')
-    # print(f'Epsilon Final: {acat._eps_final}')
-    # print(f'Epsilon Explore: {acat._eps_explore}')
-    # print('############################################################')
 
-    min_green = 5
-    max_green = 90
-    yellow = 5
     s_prev = None
     a_prev = None
 
     info_dict = make_info_dict()
     emissions = []
     
-    for time_counter in tqdm(range(rollout_time)):
-        obs_dict = {}
-        state_dict = {}
-        action_dict = {}
-        reward_dict = {}
+    obs_dict = {}
+    state_dict = {}
+    action_dict = {}
+    reward_dict = {}
 
-        decision_step = time_counter % 5 == 0 
-        if decision_step:
-            # State: is composed by the internal state and delay.
-            # internal state is affected by environment conditions
-            # or by yellew and green rules.
-            observations, exclude_actions = env.convert()
-            state = approx.approximate(observations)
-            actions = acat.act(state, exclude_actions=exclude_actions)
-            env.update(actions)
 
-            if s_prev is None and a_prev is None:
+    gen = env.loop(rollout_time)
+
+    try:
+        while True:
+            observations = next(gen)
+            if observations is not None:
+                state = approx.approximate(observations)
+                actions = acat.act(state) 
+
+                if s_prev is None and a_prev is None:
+                    s_prev = state
+                    a_prev = actions
+
+                else:
+                    r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
+
+                    sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
+                    num_vehicles = len(env.speeds)
+                    info_dict["rewards"].append(r_next)
+                    info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+                    info_dict["vehicles"].append(num_vehicles)
+                    info_dict["observation_spaces"].append(observations) # No function approximation.
+                    info_dict["actions"].append(actions)
+                    info_dict["states"].append(state)
+
                 s_prev = state
                 a_prev = actions
+                gen.send(actions)
+            update_emissions(eng, emissions)
 
-            else:
-                # INTERLEAVED COOPERATION
-                r_next = {tl_id: -sum(obs[2:]) for tl_id, obs in observations.items()}
-                def fn(x, u):
-                    # First cycle ignore yellow transitions
-                    if time_counter <= min_green: return False
-                    # Switch to yellow
-                    if int(x[0]) != u: return True
-                    if int(x[1])  == min_green: return True
-                    return False
+    except StopIteration as e:
+        result = e.value
 
-                def ctrl(x, u):
-                    # Switch to yellow
-                    if int(x[0]) != u: return int(2 * x[0] + 1)
-                    # Switch to green
-                    if int(x[1]) == yellow: return int(2 * x[0])
 
-                controller_actions = {
-                    tl_id: ctrl(obs, actions[tl_id])
-                    for tl_id, obs in observations.items() if fn(obs, actions[tl_id])
-                }
-                # this_observation = observations.get('247123161', {})
-                # this_action = actions.get('247123161', {})
-                # this_phase_id = controller_actions.get('247123161', {})
-                # print(f'{time_counter}:{this_observation} --> {this_action} --> {this_phase_id}') 
-                for tl_id, tl_phase_id in controller_actions.items():
-                    eng.set_tl_phase(tl_id, tl_phase_id)
-                
-                sum_speeds = sum(([float(vel) for vel in eng.get_vehicle_speed().values()]))
-                num_vehicles = eng.get_vehicle_count()
-                info_dict["rewards"].append(reward_dict)
-                info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-                info_dict["vehicles"].append(num_vehicles)
-                info_dict["observation_spaces"].append(obs_dict)
-                info_dict["actions"].append(action_dict)
-                info_dict["states"].append(state_dict)
-
-        update_emissions(eng, emissions)
-        eng.next_step()
-
-    # Store train info dict.
     # TODO: Turn all of this into Path standard
     logs_dir_path = Path(target_path) / 'logs'
     logs_dir_path.mkdir(exist_ok=True)
