@@ -90,7 +90,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     # for episode in tqdm(range(num_episodes)):
     # while episode > 0:
     for eps in trange(num_episodes, position=0):
-        gen = env.run_episode(experiment_save_agent_interval)
+        gen = env.loop(experiment_save_agent_interval)
 
         try:
             while True:
