@@ -14,12 +14,6 @@ from copy import deepcopy
 import numpy as np
 from tqdm import tqdm
 
-def make_initial_state(phases):
-    return {
-        tl_id: tuple([0] * (len(tl_phases) + 2))
-        for tl_id, tl_phases in phases.items()
-    }
-
 class Environment(object):
     def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
         '''Environment constructor method.
@@ -42,7 +36,6 @@ class Environment(object):
         self.tl_ids = []
         self.phases = {}
         self.max_speeds = {}
-        # self.log = {}
 
         phases_per_edges = {}
         edges_max_speeds = {}
@@ -74,7 +67,6 @@ class Environment(object):
             self.max_speeds[intersection['id']] = edges_max_speeds
             self.tl_ids.append(intersection['id']) 
         if engine is not None: self.engine = engine
-        # self.log[0] = make_initial_state(self.phases)
 
     @property
     def engine(self):
@@ -98,7 +90,7 @@ class Environment(object):
     def vehicles(self):
         return self._get_lane_vehicles(self.timestep)
 
-    @lru_cache
+    @lru_cache(maxsize=1)
     def _get_lane_vehicles(self, timestep):
         return self.engine.get_lane_vehicles()
 
@@ -106,14 +98,11 @@ class Environment(object):
     def speeds(self):
         return self._get_vehicle_speed(self.timestep)
 
-    @lru_cache
+    @lru_cache(maxsize=1)
     def _get_vehicle_speed(self, timestep):
         return self.engine.get_vehicle_speed()
 
     def _reset(self):
-        # Agents' state
-        # self.log = {}
-        # self.log[0] = make_initial_state(self.phases)
         self._internal_states = {tl_id: (0, 0) for tl_id in self.tl_ids}
 
         # Environment's state
@@ -125,7 +114,7 @@ class Environment(object):
     def observations(self):
         return self._observations(self.timestep)
 
-    @lru_cache
+    @lru_cache(maxsize=1)
     def _observations(self, timestep):
         active_phases = self._update_internal_states()
         features = self._update_features()
@@ -185,7 +174,6 @@ class Environment(object):
     """Performs phase control""" 
     def _phase_ctl(self, actions):
         controller_actions = {}
-        # _observations = self.log[self.timestep]  # self.timestep key must exist.
         for tlid, obs in self.observations.items():
             phases = self.phases[tlid]
             current_phase, current_time = obs[:2]
@@ -201,8 +189,8 @@ class Environment(object):
 
                 # adjust log
                 next_phase = (current_phase + 1) % len(phases) 
-                # self.log[self.timestep][tlid] = (next_phase, 0) + obs[:2]
                 self._internal_states[tlid] = (next_phase, 0)
+
         for tl_id, tl_phase_id in controller_actions.items():
             self.engine.set_tl_phase(tlid, tl_phase_id)
 
