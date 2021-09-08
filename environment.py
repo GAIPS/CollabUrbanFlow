@@ -17,7 +17,7 @@ def make_initial_state(phases):
         for tl_id, tl_phases in phases.items()
     }
 
-class DelayConverter(object):
+class Environment(object):
     def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
         '''DelayCoverter constructor method.
             TODO: fill dictionary

@@ -16,7 +16,7 @@ from cityflow import Engine
 
 # TODO: Build a factory
 from agents.actor_critic import ACAT
-from converters import WAVE, DelayConverter
+from environment import Environment
 from approximators.tile_coding import TileCodingApproximator
 
 # prevent randomization
@@ -103,7 +103,7 @@ def main(run_path=None):
     np.random.seed(seed)
     eng.set_random_seed(seed)
 
-    dc = DelayConverter(roadnet, eng)
+    env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
 
     # TODO: get_agent('A_CAT')
@@ -136,10 +136,10 @@ def main(run_path=None):
             # State: is composed by the internal state and delay.
             # internal state is affected by environment conditions
             # or by yellew and green rules.
-            observations, exclude_actions = dc.convert()
+            observations, exclude_actions = env.convert()
             state = approx.approximate(observations)
             actions = acat.act(state, exclude_actions=exclude_actions)
-            dc.update(actions)
+            env.update(actions)
 
             if s_prev is None and a_prev is None:
                 s_prev = state

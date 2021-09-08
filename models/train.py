@@ -22,7 +22,7 @@ import numpy as np
 from cityflow import Engine
 
 from agents.actor_critic import ACAT
-from converters import DelayConverter
+from environment import Environment
 from approximators.tile_coding import TileCodingApproximator
 
 # prevent randomization
@@ -75,9 +75,9 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     copyfile(roadnet_file_path, save_dir_path / 'roadnet.json')
     with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
 
-    dc = DelayConverter(roadnet, eng)
+    env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
-    acat = ACAT(dc.phases, epsilon_init, epsilon_final, epsilon_timesteps)
+    acat = ACAT(env.phases, epsilon_init, epsilon_final, epsilon_timesteps)
 
     info_dict = defaultdict(lambda : [])
     s_prev = None
@@ -92,7 +92,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             # internal state is affected by environment conditions
             # or by yellew and green rules.
             # print(f'{acat.eps}')
-            observations = dc.observe()
+            observations = env.observe()
             state = approx.approximate(observations)
             actions = acat.act(state) 
 
@@ -133,10 +133,10 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
             s_prev = None
             a_prev = None
-            dc.reset()
+            env.reset()
             acat.reset()
         else:
-            dc.step(actions)
+            env.step(actions)
 
 
     # Store train info dict.
