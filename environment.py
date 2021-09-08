@@ -7,10 +7,8 @@
     * Logs past observations
 
 '''
-import ipdb
 from functools import lru_cache
 
-from copy import deepcopy
 import numpy as np
 from tqdm import tqdm
 
@@ -84,7 +82,6 @@ class Environment(object):
     def timestep(self):
         return int(self.engine.get_current_time()) 
 
-
     """ Dynamic properties are cached""" 
     @property
     def vehicles(self):
@@ -103,9 +100,7 @@ class Environment(object):
         return self.engine.get_vehicle_speed()
 
     def _reset(self):
-        self._internal_states = {tl_id: (0, 0) for tl_id in self.tl_ids}
-
-        # Environment's state
+        self._active_phases = {tl_id: (0, 0) for tl_id in self.tl_ids}
         for tl_id in self.tl_ids:
             self.engine.set_tl_phase(tl_id, 0)
         self.engine.reset()
@@ -116,18 +111,18 @@ class Environment(object):
 
     @lru_cache(maxsize=1)
     def _observations(self, timestep):
-        active_phases = self._update_internal_states()
+        active_phases = self._update_active_phases()
         features = self._update_features()
         return {_id: active_phases[_id] + features[_id] for _id in self.tl_ids}
 
     # TODO: include switch
-    def _update_internal_states(self):
-        for tl_id, internal  in self._internal_states.items():
+    def _update_active_phases(self):
+        for tl_id, internal  in self._active_phases.items():
             active_phase, active_time = internal
 
             active_time += self.step_size if self.timestep > 0 else 0 
-            self._internal_states[tl_id] = (active_phase, active_time)
-        return self._internal_states
+            self._active_phases[tl_id] = (active_phase, active_time)
+        return self._active_phases
 
     def _update_features(self):
         observations = {}
@@ -150,10 +145,10 @@ class Environment(object):
         return observations
 
 
-    def loop(self, episode_length):
+    def loop(self, num_steps):
         # Before
         self._reset()
-        for eps in tqdm(range(episode_length)):
+        for eps in tqdm(range(num_steps)):
             if self.is_decision_step:
                 actions = yield self.observations
             else:
@@ -167,32 +162,31 @@ class Environment(object):
         # KEEP or SWITCH phase
         # Maps agent action to controller action
         # G -> Y -> G -> Y
-        if self.is_decision_step: 
-            self._phase_ctl(actions)
+        if self.is_decision_step: self._phase_ctl(actions)
         self.engine.next_step()
 
     """Performs phase control""" 
     def _phase_ctl(self, actions):
-        controller_actions = {}
-        for tlid, obs in self.observations.items():
-            phases = self.phases[tlid]
-            current_phase, current_time = obs[:2]
-            current_action = actions[tlid]
+        for tl_id, active_phases in self._active_phases.items():
+            phases = self.phases[tl_id]
+            current_phase, current_time = active_phases
+            current_action = actions[tl_id]
+            phase_ctrl = None
             if current_time == self.yellow and self.timestep > 5:
                 # transitions to green
-                controller_actions[tlid] = current_phase * 2
+                phase_ctrl = current_phase * 2
 
             elif (current_time > self.yellow + self.min_green and current_action == 1) or \
                     (current_time == self.max_green):
                 # transitions to yellow
-                controller_actions[tlid] = (current_phase * 2 + 1) % (2 * len(phases))
+                phase_ctrl = (current_phase * 2 + 1) % (2 * len(phases))
 
                 # adjust log
                 next_phase = (current_phase + 1) % len(phases) 
-                self._internal_states[tlid] = (next_phase, 0)
+                self._active_phases[tl_id] = (next_phase, 0)
 
-        for tl_id, tl_phase_id in controller_actions.items():
-            self.engine.set_tl_phase(tlid, tl_phase_id)
+            if phase_ctrl is not None:
+                self.engine.set_tl_phase(tl_id, phase_ctrl)
 
 """ features computation """
 # TODO: Compute features from data seperately
