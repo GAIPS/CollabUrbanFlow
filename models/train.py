@@ -1,7 +1,10 @@
 """ 
     Trains an A_CAT agent.
 
-    TODO: Make this script specific to A_CAT agent.
+    References:
+    -----------
+    * Generators
+        http://www.dabeaz.com/finalgenerator/FinalGenerator.pdf
 """
 import ipdb
 import json, os, sys
@@ -16,7 +19,7 @@ sys.path.append(Path.cwd().as_posix())
 
 from datetime import datetime
 
-from tqdm import tqdm
+from tqdm.auto import trange
 import configparser
 import numpy as np
 from cityflow import Engine
@@ -83,60 +86,55 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     s_prev = None
     a_prev = None
 
-    for time_counter in tqdm(range(experiment_time)):
-        step_counter = time_counter % experiment_save_agent_interval
+    num_episodes = int(experiment_time / experiment_save_agent_interval)
+    # for episode in tqdm(range(num_episodes)):
+    # while episode > 0:
+    for eps in trange(num_episodes, position=0):
+        gen = env.run_episode(experiment_save_agent_interval)
 
-        decision_step = step_counter % 5 == 0 
-        if decision_step:
-            # State: is composed by the internal state and delay.
-            # internal state is affected by environment conditions
-            # or by yellew and green rules.
-            # print(f'{acat.eps}')
-            observations = env.observe()
-            state = approx.approximate(observations)
-            actions = acat.act(state) 
+        try:
+            while True:
+                observations = next(gen)
+                if observations is not None:
+                    state = approx.approximate(observations)
+                    actions = acat.act(state) 
 
-            if s_prev is None and a_prev is None:
-                s_prev = state
-                a_prev = actions
+                    if s_prev is None and a_prev is None:
+                        s_prev = state
+                        a_prev = actions
 
-            else:
-                r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
-                acat.update(s_prev, a_prev, r_next, state)
+                    else:
+                        r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
+                        acat.update(s_prev, a_prev, r_next, state)
+                        
+                        sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
+                        num_vehicles = len(env.speeds)
+                        info_dict["rewards"].append(r_next)
+                        info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+                        info_dict["vehicles"].append(num_vehicles)
+                        info_dict["observation_spaces"].append(observations) # No function approximation.
+                        info_dict["actions"].append(actions)
+                        info_dict["states"].append(state)
 
-                    
-                
-                sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
-                num_vehicles = len(env.speeds)
-                info_dict["rewards"].append(r_next)
-                info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-                info_dict["vehicles"].append(num_vehicles)
-                info_dict["observation_spaces"].append(observations) # No function approximation.
-                info_dict["actions"].append(actions)
-                info_dict["states"].append(state)
+                    s_prev = state
+                    a_prev = actions
+                    gen.send(actions)
 
-                s_prev = state
-                a_prev = actions
-        else:
-            actions = {}
-
-
-        if step_counter == experiment_save_agent_interval - 1:
+        except StopIteration as e:
+            result = e.value
+            # End of episode: save iterations
             # TODO: use path
             chkpt_dir = f"{experiment_path}/checkpoints/"
             os.makedirs(chkpt_dir, exist_ok=True)
 
             chkpt_dir = Path(chkpt_dir)
-            chkpt_num = str(time_counter)
+            chkpt_num = str(eps * experiment_save_agent_interval)
             os.makedirs(chkpt_dir, exist_ok=True)
             acat.save_checkpoint(chkpt_dir, chkpt_num)
 
             s_prev = None
             a_prev = None
-            env.reset()
             acat.reset()
-        else:
-            env.step(actions)
 
 
     # Store train info dict.

@@ -12,7 +12,7 @@ from functools import lru_cache
 
 from copy import deepcopy
 import numpy as np
-from cityflow import Engine
+from tqdm import tqdm
 
 def make_initial_state(phases):
     return {
@@ -21,7 +21,6 @@ def make_initial_state(phases):
     }
 
 class Environment(object):
-
     def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
         '''Environment constructor method.
             Params:
@@ -173,6 +172,18 @@ class Environment(object):
         return observations
 
 
+    def run_episode(self, episode_length):
+        # Before
+        self.reset()
+        for eps in tqdm(range(episode_length)):
+            if self.is_decision_step:
+                actions = yield self.observe()
+            else:
+                yield
+            self.step(actions)
+        return 0
+        
+    
     def step(self, actions={}):
         # Handle controller actions
         # KEEP or SWITCH phase
