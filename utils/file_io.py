@@ -10,7 +10,7 @@ import configparser
 
 from cityflow import Engine
 
-def engine_load_config(network):
+def engine_load_config(network_or_path):
     """Loads config, roadnet and flows 
 
     * Loads json files from data/networks
@@ -28,10 +28,16 @@ def engine_load_config(network):
       Dictionary representation of config file.
     """ 
 
+    if isinstance(network_or_path, str):
+        file_path = Path(f'data/networks/{network_or_path}')
+
+    elif isinstance(network_or_path, Path):
+        file_path = network_or_path
+
     # Parse train parameters.
-    config_file_path = Path(f'data/networks/{network}/config.json')
-    roadnet_file_path = Path(f'data/networks/{network}/roadnet.json')
-    flow_file_path = Path(f'data/networks/{network}/flow.json')
+    config_file_path = file_path / 'config.json'
+    roadnet_file_path = file_path / 'roadnet.json'
+    flow_file_path = file_path / 'flow.json'
 
 
     with config_file_path.open() as f: config = json.load(f)
@@ -54,7 +60,7 @@ def engine_create(network_or_path, seed=0, thread_num=4):
     if isinstance(network_or_path, str):
         config_file_path = Path(f'data/networks/{network_or_path}/config.json')
     elif isinstance(network_or_path, Path):
-        raise NotImplementedError
+        config_file_path = network_or_path
     eng = Engine(config_file_path.as_posix(), thread_num=4)
     eng.set_random_seed(seed)
     return eng
@@ -65,6 +71,18 @@ def expr_path_create(network):
     Path.mkdir(expr_path, exist_ok=True)
     print(f'Experiment: {str(expr_path)}\n')
     return expr_path
+
+def expr_path_test_target(orig_path):
+    args = parse_train_config(Path(orig_path) / 'config' / 'train.config', args_list=['network'])
+    network = args['network']
+
+    target_path = Path(orig_path) / 'eval'
+    target_path.mkdir(exist_ok=True)
+    timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
+
+    target_path =  target_path / f'{network}_{timestamp}'
+    target_path.mkdir(exist_ok=True)
+    return target_path
 
 def expr_config_dump(network, expr_path, config, flow, roadnet):
     config['dir'] = f'{expr_path.as_posix()}/'
@@ -79,13 +97,13 @@ def expr_config_dump(network, expr_path, config, flow, roadnet):
     with (save_dir_path / 'flow.json').open('w') as f: json.dump(flow, f)
     with (save_dir_path / 'roadnet.json').open('w') as f: json.dump(roadnet, f)
 
-def expr_train_dump(expr_path, info_dict):
+def expr_logs_dump(expr_path, filename, data):
     logs_dir_path = Path(expr_path) / 'logs'
-    print(logs_dir_path)
     logs_dir_path.mkdir(exist_ok=True)
-    train_log_path = logs_dir_path / "train_log.json"
-    with train_log_path.open('w') as f:
-        json.dump(info_dict, f)
+    logs_path = logs_dir_path / filename
+    with logs_path.open('w') as f:
+        json.dump(data, f)
+        print(logs_path)
     return logs_dir_path
 
 def parse_train_config(train_config_path,
@@ -111,3 +129,24 @@ def parse_train_config(train_config_path,
     ret['epsilon_schedule_timesteps'] = float(train_args['epsilon_schedule_timesteps'])
 
     return ret
+
+def parse_test_config(test_config_path):
+
+    if isinstance(test_config_path, str):
+        test_config_path = Path(test_config_path)
+    ret = {}
+
+    # Load test config file with parameters.
+    test_config = configparser.ConfigParser()
+    test_config.read(test_config_path)
+    test_args = test_config['test_args']
+
+    ret['orig_path'] = test_args['run-path']
+    ret['rollout_time'] = int(test_args['rollout-time'])
+    ret['chkpt_num'] = int(test_args['chkpt-number'])
+    ret['seed'] = int(test_args['seed'])
+    ret['chkpt_dir_path'] = Path(ret['orig_path']) / 'checkpoints' 
+
+    return ret
+
+

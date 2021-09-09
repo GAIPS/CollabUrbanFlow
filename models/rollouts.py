@@ -21,7 +21,8 @@ from cityflow import Engine
 from agents.actor_critic import ACAT
 from environment import Environment
 from approximators.tile_coding import TileCodingApproximator
-
+from utils.file_io import engine_create, engine_load_config, expr_logs_dump, \
+                            expr_path_test_target, parse_test_config
 # prevent randomization
 PYTHONHASHSEED=-1
 
@@ -53,65 +54,35 @@ def make_list():
 def make_info_dict():
     return defaultdict(make_list)
 
-def main(run_path=None):
+def main(test_config_path=None):
     # Setup config parser path.
+    args = parse_test_config(test_config_path)
     
-    # Load config file with parameters.
-    rollouts_config = configparser.ConfigParser()
+    orig_path =  args['orig_path']
+    rollout_time =  args['rollout_time']
+    chkpt_num =  args['chkpt_num']
+    seed =  args['seed']
+    chkpt_dir_path = Path(orig_path) / 'checkpoints' 
 
-    # TODO: Change path to checkpoints
-    # TODO: Read train
-    rollouts_config.read(run_path)
-    rollouts_args = rollouts_config['test_args']
-
-    # Setup parser with custom path (load correct train parameters).
-    orig_path = rollouts_args['run-path']
-    rollout_time = int(rollouts_args['rollout-time'])
-    chkpt_num = int(rollouts_args['chkpt-number'])
-    seed = int(rollouts_args['seed'])
-    checkpoints_dir_path = Path(orig_path) / 'checkpoints' 
-
-    # training data
-    train_path = Path(orig_path) / 'config' / 'train.config'
-
-    train_config = configparser.ConfigParser()
-    train_config.read(train_path)
-
-    network = train_config.get('train_args', 'network') 
-    # TODO: Build agent
-    # agent_type = train_config.get('agent_type', 'agent_type')
-
-    target_path = Path(orig_path) / 'eval'
-    target_path.mkdir(exist_ok=True)
-    timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
-
-    target_path =  target_path / f'{network}_{timestamp}'
-    target_path.mkdir(exist_ok=True)
-    
+    target_path = expr_path_test_target(orig_path)
 
     # TODO: replace by pathlib
     print(f'Experiment: {str(target_path)}\n')
     
-    # Build engine
-    config_file_path = Path(orig_path) / 'config' / 'config.json' 
-    flow_file_path = Path(f'data/networks/{network}/flow.json')
-    roadnet_file_path = Path(orig_path) / 'config' / 'roadnet.json' 
-    with roadnet_file_path.open() as f: roadnet = json.load(f)
-    with flow_file_path.open() as f: flows = json.load(f)
-    with config_file_path.open() as f: cfg = json.load(f)
-    cfg['dir'] = f'{config_file_path.parent}/'
-    with config_file_path.open('w') as f: json.dump(cfg, f)
-    eng = Engine(config_file_path.as_posix(), thread_num=4)
+    # Have to update the target path
+    config_dir_path = Path(orig_path) / 'config'
+
+    config, flows, roadnet = engine_load_config(config_dir_path)
+    config['dir'] = f'{config_dir_path}/'
+    with (config_dir_path / 'config.json').open('w') as f: json.dump(config, f)
+    eng = engine_create(config_dir_path / 'config.json', seed=seed, thread_num=4)
 
     np.random.seed(seed)
-    eng.set_random_seed(seed)
 
     env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
 
-    # TODO: get_agent('A_CAT')
-    # TODO: Load agent.
-    acat = ACAT.load_checkpoint(checkpoints_dir_path, chkpt_num)
+    acat = ACAT.load_checkpoint(chkpt_dir_path, chkpt_num)
     acat.stop()
 
     s_prev = None
@@ -120,12 +91,6 @@ def main(run_path=None):
     info_dict = make_info_dict()
     emissions = []
     
-    obs_dict = {}
-    state_dict = {}
-    action_dict = {}
-    reward_dict = {}
-
-
     gen = env.loop(rollout_time)
 
     try:
@@ -158,16 +123,8 @@ def main(run_path=None):
 
     except StopIteration as e:
         result = e.value
-
-
-    # TODO: Turn all of this into Path standard
-    logs_dir_path = Path(target_path) / 'logs'
-    logs_dir_path.mkdir(exist_ok=True)
+    expr_logs_dump(target_path, 'emission_log.json', emissions)
     
-
-    emission_log_path = logs_dir_path / "emission_log.json"
-    with emission_log_path.open('w') as f:
-        json.dump(emissions, f)
     info_dict['id'] = chkpt_num
     return info_dict
 
