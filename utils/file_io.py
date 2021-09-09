@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from shutil import copyfile
 
+import configparser
+
 from cityflow import Engine
 
 def engine_load_config(network):
@@ -57,17 +59,17 @@ def engine_create(network_or_path, seed=0, thread_num=4):
     eng.set_random_seed(seed)
     return eng
 
-def experiment_path_create(network):
+def expr_path_create(network):
     timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
-    experiment_path =  Path(f'data/emissions/{network}_{timestamp}')
-    Path.mkdir(experiment_path, exist_ok=True)
-    print(f'Experiment: {str(experiment_path)}\n')
-    return experiment_path
+    expr_path =  Path(f'data/emissions/{network}_{timestamp}')
+    Path.mkdir(expr_path, exist_ok=True)
+    print(f'Experiment: {str(expr_path)}\n')
+    return expr_path
 
-def experiment_config_dump(network, experiment_path, config, flow, roadnet):
-    config['dir'] = f'{experiment_path.as_posix()}/'
+def expr_config_dump(network, expr_path, config, flow, roadnet):
+    config['dir'] = f'{expr_path.as_posix()}/'
     
-    save_dir_path = Path(experiment_path) / 'config'
+    save_dir_path = Path(expr_path) / 'config'
     save_dir_path.mkdir(exist_ok=True)
     # if not save_dir_path.exists():
     #     save_dir_path.mkdir()
@@ -76,3 +78,36 @@ def experiment_config_dump(network, experiment_path, config, flow, roadnet):
     with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
     with (save_dir_path / 'flow.json').open('w') as f: json.dump(flow, f)
     with (save_dir_path / 'roadnet.json').open('w') as f: json.dump(roadnet, f)
+
+def expr_train_dump(expr_path, info_dict):
+    logs_dir_path = Path(expr_path) / 'logs'
+    print(logs_dir_path)
+    logs_dir_path.mkdir(exist_ok=True)
+    train_log_path = logs_dir_path / "train_log.json"
+    with train_log_path.open('w') as f:
+        json.dump(info_dict, f)
+    return logs_dir_path
+
+def parse_train_config(train_config_path,
+        args_list=['network', 'experiment_time', 'experiment_save_agent_interval',
+            'epsilon_init', 'epsilon_final', 'epsilon_schedule_timesteps'] ):
+    if isinstance(train_config_path, str):
+        train_config_path = Path(train_config_path)
+
+    ret = {}
+
+    # Load train config file with parameters.
+    train_config = configparser.ConfigParser()
+    train_config.read(train_config_path)
+    train_args = train_config['train_args']
+
+    ret['network'] = train_args['network']
+    ret['experiment_time']= int(train_args['experiment_time'])
+    ret['experiment_save_agent_interval']= int(train_args['experiment_save_agent_interval'])
+
+    # Epsilon 
+    ret['epsilon_init'] = float(train_args['epsilon_init'])
+    ret['epsilon_final'] = float(train_args['epsilon_final'])
+    ret['epsilon_schedule_timesteps'] = float(train_args['epsilon_schedule_timesteps'])
+
+    return ret

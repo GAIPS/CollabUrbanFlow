@@ -7,10 +7,11 @@
         http://www.dabeaz.com/finalgenerator/FinalGenerator.pdf
 """
 import ipdb
-import json, os, sys
+import os, sys
+# import json, os, sys
 from collections import defaultdict
 from pathlib import Path
-from shutil import copyfile
+#from shutil import copyfile
 # FIXME: DEBUG
 # append the path of the
 # parent directory
@@ -19,14 +20,15 @@ sys.path.append(Path.cwd().as_posix())
 
 
 from tqdm.auto import trange
-import configparser
+# import configparser
 import numpy as np
 
-from agents.actor_critic import ACAT
 from environment import Environment
+from agents.actor_critic import ACAT
 from approximators.tile_coding import TileCodingApproximator
 from utils.file_io import engine_create, engine_load_config, \
-                            experiment_path_create, experiment_config_dump
+                            expr_path_create, expr_config_dump, expr_train_dump, \
+                            parse_train_config
 
 # prevent randomization
 TRAIN_CONFIG_PATH = 'config/train.config'
@@ -37,17 +39,18 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     print(f'Loading train parameters from: {train_config_path}')
 
     # Load train config file with parameters.
-    train_config = configparser.ConfigParser()
-    train_config.read(train_config_path)
-    train_args = train_config['train_args']
+    # train_config = configparser.ConfigParser()
+    # train_config.read(train_config_path)
+    # train_args = train_config['train_args']
+    train_args = parse_train_config(train_config_path)
     network = train_args['network']
-    experiment_time = int(train_args['experiment_time'])
-    experiment_save_agent_interval = int(train_args['experiment_save_agent_interval'])
+    experiment_time = train_args['experiment_time']
+    episode_time = train_args['experiment_save_agent_interval']
 
     # Epsilon 
-    epsilon_init = float(train_args['epsilon_init'])
-    epsilon_final = float(train_args['epsilon_final'])
-    epsilon_timesteps = float(train_args['epsilon_schedule_timesteps'])
+    epsilon_init = train_args['epsilon_init']
+    epsilon_final = train_args['epsilon_final']
+    epsilon_timesteps = train_args['epsilon_schedule_timesteps']
 
     # Parse train parameters.
     # config_file_path = Path(f'data/networks/{network}/config.json')
@@ -63,7 +66,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     # with flow_file_path.open() as f: flows = json.load(f)
     # with roadnet_file_path.open() as f: roadnet = json.load(f)
 
-    experiment_path = experiment_path_create(network)
+    expr_path = expr_path_create(network)
     # timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
     # experiment_path =  f'data/emissions/{network}_{timestamp}'
     # # TODO: replace by pathlib
@@ -81,7 +84,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     # copyfile(roadnet_file_path, save_dir_path / 'roadnet.json')
     # with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
 
-    experiment_config_dump(network, experiment_path, config, flows, roadnet)
+    expr_config_dump(network, expr_path, config, flows, roadnet)
     env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
     acat = ACAT(env.phases, epsilon_init, epsilon_final, epsilon_timesteps)
@@ -90,11 +93,9 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     s_prev = None
     a_prev = None
 
-    num_episodes = int(experiment_time / experiment_save_agent_interval)
-    # for episode in tqdm(range(num_episodes)):
-    # while episode > 0:
+    num_episodes = int(experiment_time / episode_time)
     for eps in trange(num_episodes, position=0):
-        gen = env.loop(experiment_save_agent_interval)
+        gen = env.loop(episode_time)
 
         try:
             while True:
@@ -127,12 +128,12 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
         except StopIteration as e:
             result = e.value
             # End of episode: save iterations
-            # TODO: Put this logic inside actor_critic.checkpoint
-            chkpt_dir = f"{experiment_path}/checkpoints/"
-            os.makedirs(chkpt_dir, exist_ok=True)
+            # # TODO: Put this logic inside actor_critic.checkpoint
+            # chkpt_dir = f"{expr_path}/checkpoints/"
+            # os.makedirs(chkpt_dir, exist_ok=True)
 
-            chkpt_dir = Path(chkpt_dir)
-            chkpt_num = str(eps * experiment_save_agent_interval)
+            chkpt_dir = Path(f"{expr_path}/checkpoints/")
+            chkpt_num = str(eps * episode_time)
             os.makedirs(chkpt_dir, exist_ok=True)
             acat.save_checkpoint(chkpt_dir, chkpt_num)
 
@@ -143,14 +144,15 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     # Store train info dict.
     # TODO: Turn all of this into Path standard
-    logs_dir_path = Path(experiment_path) / 'logs'
-    print(logs_dir_path)
-    os.makedirs(logs_dir_path.as_posix(), exist_ok=True)
-    train_log_path = logs_dir_path / "train_log.json"
-    with train_log_path.open('w') as f:
-        json.dump(info_dict, f)
+    # logs_dir_path = Path(expr_path) / 'logs'
+    # print(logs_dir_path)
+    # os.makedirs(logs_dir_path.as_posix(), exist_ok=True)
+    # train_log_path = logs_dir_path / "train_log.json"
+    # with train_log_path.open('w') as f:
+    #     json.dump(info_dict, f)
+    expr_train_dump(expr_path, info_dict)
 
-    return str(experiment_path)
+    return str(expr_path)
 
 if __name__ == '__main__':
     main(train_config_path='config/train.config')
