@@ -17,16 +17,16 @@ from shutil import copyfile
 sys.path.append(Path.cwd().as_posix())
 # print(sys.path)
 
-from datetime import datetime
 
 from tqdm.auto import trange
 import configparser
 import numpy as np
-from cityflow import Engine
 
 from agents.actor_critic import ACAT
 from environment import Environment
 from approximators.tile_coding import TileCodingApproximator
+from utils.file_io import engine_create, engine_load_config, \
+                            experiment_path_create, experiment_config_dump
 
 # prevent randomization
 TRAIN_CONFIG_PATH = 'config/train.config'
@@ -50,34 +50,38 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     epsilon_timesteps = float(train_args['epsilon_schedule_timesteps'])
 
     # Parse train parameters.
-    config_file_path = Path(f'data/networks/{network}/config.json')
-    roadnet_file_path = Path(f'data/networks/{network}/roadnet.json')
-    flow_file_path = Path(f'data/networks/{network}/flow.json')
-    eng = Engine(config_file_path.as_posix(), thread_num=4)
+    # config_file_path = Path(f'data/networks/{network}/config.json')
+    # roadnet_file_path = Path(f'data/networks/{network}/roadnet.json')
+    # flow_file_path = Path(f'data/networks/{network}/flow.json')
+    # eng = Engine(config_file_path.as_posix(), thread_num=4)
+    eng = engine_create(network, seed=seed, thread_num=4)
+    config, flows, roadnet = engine_load_config(network) 
 
     np.random.seed(seed)
-    eng.set_random_seed(seed)
-    with config_file_path.open() as f: config = json.load(f)
-    with flow_file_path.open() as f: flows = json.load(f)
-    with roadnet_file_path.open() as f: roadnet = json.load(f)
+    # eng.set_random_seed(seed)
+    # with config_file_path.open() as f: config = json.load(f)
+    # with flow_file_path.open() as f: flows = json.load(f)
+    # with roadnet_file_path.open() as f: roadnet = json.load(f)
 
-    timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
-    experiment_path =  f'data/emissions/{network}_{timestamp}'
-    # TODO: replace by pathlib
-    os.makedirs(experiment_path, exist_ok=True)
-    print(f'Experiment: {str(experiment_path)}\n')
+    experiment_path = experiment_path_create(network)
+    # timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
+    # experiment_path =  f'data/emissions/{network}_{timestamp}'
+    # # TODO: replace by pathlib
+    # os.makedirs(experiment_path, exist_ok=True)
+    # print(f'Experiment: {str(experiment_path)}\n')
 
     # TODO: save logs
-    config['dir'] = f'{experiment_path}/'
-    
-    save_dir_path = Path(experiment_path) / 'config'
-    if not save_dir_path.exists():
-        save_dir_path.mkdir()
-    copyfile(train_config_path, save_dir_path / 'train.config')
-    copyfile(flow_file_path, save_dir_path / 'flow.json')
-    copyfile(roadnet_file_path, save_dir_path / 'roadnet.json')
-    with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
+    # config['dir'] = f'{experiment_path}/'
+    # 
+    # save_dir_path = Path(experiment_path) / 'config'
+    # if not save_dir_path.exists():
+    #     save_dir_path.mkdir()
+    # copyfile(train_config_path, save_dir_path / 'train.config')
+    # copyfile(flow_file_path, save_dir_path / 'flow.json')
+    # copyfile(roadnet_file_path, save_dir_path / 'roadnet.json')
+    # with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
 
+    experiment_config_dump(network, experiment_path, config, flows, roadnet)
     env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
     acat = ACAT(env.phases, epsilon_init, epsilon_final, epsilon_timesteps)
@@ -123,7 +127,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
         except StopIteration as e:
             result = e.value
             # End of episode: save iterations
-            # TODO: use path
+            # TODO: Put this logic inside actor_critic.checkpoint
             chkpt_dir = f"{experiment_path}/checkpoints/"
             os.makedirs(chkpt_dir, exist_ok=True)
 
