@@ -18,6 +18,7 @@ import argparse
 import numpy as np
 from pathlib import Path
 import configparser
+from utils.file_io import parse_train_config
 
 import pandas as pd
 
@@ -114,6 +115,27 @@ def from_json_to_dataframe(data):
 
     return df
 
+def resample(data, column, freq=12, to_records=True):
+   """ Resample dataframe """ 
+   df = pd.DataFrame.from_dict(data[column])
+   index = pd.DatetimeIndex(df.index)
+   df.index = index
+
+   if column in ('rewards', 'vehicles'):
+       df = df.resample(f'{freq}n').sum()
+   elif column in ('actions', 'velocities'):
+       df = df.resample(f'{freq}n').mean()
+   else:
+       raise ValueError
+
+   if to_records:
+       if column in ('vehicles', 'velocities'):
+           return df.to_dict(orient='list')[0]
+       return df.to_dict(orient='records')
+   else:
+       return  np.sum(df.values, axis=1)
+
+
 def main(experiment_root_folder=None):
 
     print('\nRUNNING analysis/train_plots.py\n')
@@ -131,10 +153,15 @@ def main(experiment_root_folder=None):
     print('\nOutput folder:\n{0}\n'.format(output_folder_path))
     os.makedirs(output_folder_path, exist_ok=True)
 
-    # Get agent_type.
-    # train_config_path = list(Path(experiment_root_folder).rglob('train.config'))[0]
+    # Get episode_time and num_episodes.
+    train_config_path = list(Path(experiment_root_folder).rglob('train.config'))[0]
+    args = parse_train_config(train_config_path)
     # train_config = configparser.ConfigParser()
     # train_config.read(train_config_path)
+
+    experiment_time = args['experiment_time']
+    episode_time = args['experiment_save_agent_interval']
+    num_episodes = experiment_time / episode_time
     agent_type = 'A_CAT'
 
     actions = []
@@ -158,21 +185,26 @@ def main(experiment_root_folder=None):
             json_data = json.load(f)
 
         # Rewards per time-step.
-        r = json_data['rewards']
-        r = pd.DataFrame(r)
-        rewards1.append(np.sum(r.values, axis=1))
+        # r = json_data['rewards']
+        # r = pd.DataFrame(r)
+        # rewards1.append(np.sum(r.values, axis=1))
+        rewards1.append(resample(json_data, 'rewards', to_records=False))
 
         # aggregate data
-        rewards2.append(json_data['rewards'])
+        # rewards2.append(json_data['rewards'])
+        rewards2.append(resample(json_data, 'rewards'))
 
         # Number of vehicles per time-step.
-        vehicles.append(json_data['vehicles'])
+        # vehicles.append(json_data['vehicles'])
+        vehicles.append(resample(json_data, 'vehicles'))
 
         # Vehicles' velocity per time-step.
-        velocities.append(json_data['velocities'])
+        # velocities.append(json_data['velocities'])
+        velocities.append(resample(json_data, 'velocities'))
 
         # Agent's actions.
-        actions.append(json_data['actions'])
+        # actions.append(json_data['actions'])
+        actions.append(resample(json_data, 'actions'))
 
         # df = from_json_to_dataframe(json_data)
     """
