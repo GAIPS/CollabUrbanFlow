@@ -116,7 +116,34 @@ def from_json_to_dataframe(data):
     return df
 
 def resample(data, column, freq=12, to_records=True):
-   """ Resample dataframe """ 
+   """ Resample dataframe 
+
+    Expect ticks to be 5 to 5 seconds. Aggregate 12
+    5 to 5 seconds yielding minute data.
+
+    Params:
+    ------
+    * data: dict
+        info from training or testing aggregated 
+        by 5 seconds (decision time).
+
+    * column: str
+        a metric from info dict 
+        choice = ('actions', 'velocities', 'rewards', 'vehicles')
+
+    * freq: int
+        aggregation period (12*5 --> 60)
+
+    * to_records: Boolean
+        if records is true returns a list else
+        a numpy array.
+
+   Returns:
+   -------
+   * ret: list or numpy array
+     resampled data
+
+   """ 
    df = pd.DataFrame.from_dict(data[column])
    index = pd.DatetimeIndex(df.index)
    df.index = index
