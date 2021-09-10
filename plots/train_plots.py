@@ -62,59 +62,6 @@ def get_arguments():
     return parser.parse_args()
 
 
-def from_json_to_dataframe(data):
-    ''' Converts the json into a multi-index column. 
-
-    FIXME:
-    ------
-    * Convert into episodic.
-    * Make batch.
-
-    Params:
-    ------
-    * data: dict<str, list<dict<str, object>>
-    Example: > data
-                          rewards  velocities  vehicles   actions    
-    0   {'247123161': -0.3281}    9.191060        10     {'247123161': 0}  
-    1   {'247123161': -4.3606}    6.466366        13     {'247123161': 0}  
-    2   {'247123161': -8.0186}    3.801833        12     {'247123161': 1}  
-    3  {'247123161': -10.2113}    3.338875        16     {'247123161': 1}  
-    4  {'247123161': -12.3408}    1.936568        16     {'247123161': 1}  
- 
-        
-    Returns:
-    -------
-    * df: multi-column dataframe.
-    Example: > df.head()
-    ipdb> df.head()
-    tl_id  247123161    network          247123161
-    metric   rewards velocities vehicles   actions
-    0        -0.3281   9.191060       10         0
-    1        -4.3606   6.466366       13         0
-    2        -8.0186   3.801833       12         1
-    3       -10.2113   3.338875       16         1
-    4       -12.3408   1.936568       16         1
-
-    
-    ''' 
-    cols = ['rewards', 'velocities', 'vehicles', 'actions']
-    names = ['tl_id', 'metric']
-    data1 = defaultdict(lambda : [])
-
-    for col in cols:
-        for d in data[col]:
-            if isinstance(d, dict):
-                for k, v in d.items():
-                    data1[(k, col)].append(v)
-            else:
-                data1[('network', col)].append(d)
-
-    df = pd.DataFrame.from_dict(data1)
-    df.columns.names = names
-
-
-    return df
-
 def resample(data, column, freq=12, to_records=True):
    """ Resample dataframe 
 
@@ -148,9 +95,9 @@ def resample(data, column, freq=12, to_records=True):
    index = pd.DatetimeIndex(df.index)
    df.index = index
 
-   if column in ('rewards', 'vehicles'):
+   if column in ('rewards',):
        df = df.resample(f'{freq}n').sum()
-   elif column in ('actions', 'velocities'):
+   elif column in ('actions', 'velocities', 'vehicles'):
        df = df.resample(f'{freq}n').mean()
    else:
        raise ValueError
@@ -162,7 +109,18 @@ def resample(data, column, freq=12, to_records=True):
    else:
        return  np.sum(df.values, axis=1)
 
-
+def episodic_breakdown(data, num_episodes, num_series=3): 
+    """Breaks data down into evenly spaced episodes"""
+    episode = int(len(data['rewards']) / num_episodes)
+    for k, v in data.items():
+        d = []
+        for eps in range(num_episodes):
+            start = eps * episode
+            finish = start + episode
+            if eps in (0, int(num_episodes / 2), num_episodes-1):
+                d += v[start:finish]
+        data[k] = v
+        
 def main(experiment_root_folder=None):
 
     print('\nRUNNING analysis/train_plots.py\n')
@@ -183,12 +141,10 @@ def main(experiment_root_folder=None):
     # Get episode_time and num_episodes.
     train_config_path = list(Path(experiment_root_folder).rglob('train.config'))[0]
     args = parse_train_config(train_config_path)
-    # train_config = configparser.ConfigParser()
-    # train_config.read(train_config_path)
 
     experiment_time = args['experiment_time']
     episode_time = args['experiment_save_agent_interval']
-    num_episodes = experiment_time / episode_time
+    num_episodes = int(experiment_time / episode_time)
     agent_type = 'A_CAT'
 
     actions = []
@@ -198,10 +154,6 @@ def main(experiment_root_folder=None):
     vehicles = []
     velocities = []
 
-    sampled_rewards_2 = []
-
-    sampled_vehicles = []
-    sampled_velocities = []
     # Concatenate data for all runs.
     for run_name in train_files:
 
@@ -209,50 +161,56 @@ def main(experiment_root_folder=None):
 
         # Load JSON data.
         with open(run_name) as f:
-            json_data = json.load(f)
+            data = json.load(f)
+        episodic_breakdown(data, num_episodes)
 
         # Rewards per time-step.
-        rewards1.append(resample(json_data, 'rewards', to_records=False))
+        rewards1.append(resample(data, 'rewards', to_records=False))
 
         # aggregate data
-        rewards2.append(resample(json_data, 'rewards'))
+        rewards2.append(resample(data, 'rewards'))
 
         # Number of vehicles per time-step.
-        vehicles.append(resample(json_data, 'vehicles'))
+        vehicles.append(resample(data, 'vehicles'))
 
         # Vehicles' velocity per time-step.
-        velocities.append(resample(json_data, 'velocities'))
+        velocities.append(resample(data, 'velocities'))
 
         # Agent's actions.
-        actions.append(resample(json_data, 'actions'))
+        actions.append(resample(data, 'actions'))
 
-        # df = from_json_to_dataframe(json_data)
     """
         Rewards per cycle.
         (GLOBAL: sum of the reward for all intersections).
     """
     rewards = np.array(rewards1)
+    episode = int(rewards.shape[1] / num_episodes)
 
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    Y = np.average(rewards, axis=0)
-    Y_std = np.std(rewards, axis=0)
-    X = np.linspace(1, rewards.shape[1], rewards.shape[1])
+
+    X = np.linspace(1, episode, episode)
+    for eps in range(0, num_episodes, int(num_episodes / 2)):
+        start = eps * episode
+        finish = start + episode
+
+        xx = rewards[:, start:finish]
+        Y = np.average(xx, axis=0)
+        Y_std = np.std(xx, axis=0)
 
 
-    lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
+        lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
 
-    plt.plot(X,Y, label='Mean', c=MEAN_CURVE_COLOR)
-    plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+        plt.plot(X,Y, label=f'Mean {eps+1}', c=MEAN_CURVE_COLOR)
+        plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
 
-    if rewards.shape[0] > 1:
-        plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
+        if rewards.shape[0] > 1:
+            plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
     plt.xlabel('Minute')
     plt.ylabel('Reward')
-    # plt.title('Train rewards ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
 
     file_name = '{0}/rewards.pdf'.format(output_folder_path)
@@ -265,25 +223,30 @@ def main(experiment_root_folder=None):
     """
         Rewards per intersection.
     """
-    dfs_rewards = [pd.DataFrame(r) for r in rewards2]
-    # dfs_rewards = [pd.DataFrame(r) for r in sampled_rewards_2]
-
-    df_concat = pd.concat(dfs_rewards)
-
-    by_row_index = df_concat.groupby(df_concat.index)
-    df_rewards = by_row_index.mean()
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    window_size = min(len(df_rewards)-1, 20)
 
-    for col in df_rewards.columns:
-        plt.plot(df_rewards[col].rolling(window=window_size).mean(), label=col)
+    for eps in range(0, num_episodes, int(num_episodes / 2)):
+        start = eps * episode
+        finish = start + episode
+        
+        dfs_rewards = [pd.DataFrame(r[start:finish]) for r in rewards2]
+
+        df_concat = pd.concat(dfs_rewards)
+
+        by_row_index = df_concat.groupby(df_concat.index)
+        df_rewards = by_row_index.mean()
+
+
+        window_size = min(len(df_rewards)-1, 20)
+
+        for col in df_rewards.columns:
+            plt.plot(df_rewards[col].rolling(window=window_size).mean(), label=col)
 
     plt.xlabel('Minutes')
     plt.ylabel('Total Reward')
-    # plt.title('Rewards per intersection')
     plt.legend()
 
     plt.savefig('{0}/rewards_per_intersection.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
@@ -293,27 +256,31 @@ def main(experiment_root_folder=None):
         Number of vehicles per cycle.
         (GLOBAL: For all vehicles in simulation)
     """
-    vehicles = np.array(vehicles)
-    # vehicles = np.array(sampled_vehicles)
+
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
+    for eps in range(0, num_episodes, int(num_episodes / 2)):
+        start = eps * episode
+        finish = start + episode
+        
+        vehs = np.array([v[start:finish] for v in vehicles])
 
-    Y = np.average(vehicles, axis=0)
-    Y_std = np.std(vehicles, axis=0)
-    X = np.linspace(1, vehicles.shape[1], vehicles.shape[1])
 
-    lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
+        Y = np.average(vehs, axis=0)
+        Y_std = np.std(vehs, axis=0)
+        X = np.linspace(1, vehs.shape[1], vehs.shape[1])
 
-    plt.plot(X,Y, label='Mean', c=MEAN_CURVE_COLOR)
-    plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+        lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
 
-    if vehicles.shape[0] > 1:
-        plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
+        plt.plot(X,Y, label='Mean', c=MEAN_CURVE_COLOR)
+        plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+
+        if vehs.shape[0] > 1:
+            plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
     plt.xlabel('Minutes')
-    plt.ylabel('Total Vehicles')
-    # plt.title('Number of vehicles ({0} runs)'.format(len(train_files)))
+    plt.ylabel('Average Vehicles')
     plt.legend(loc=4)
 
     file_name = '{0}/vehicles.pdf'.format(output_folder_path)
@@ -327,32 +294,32 @@ def main(experiment_root_folder=None):
         Vehicles' velocity per cycle.
         (GLOBAL: For all vehicles in simulation)
     """
-    velocities = np.array(velocities)
-
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    Y = np.average(velocities, axis=0)
-    Y_std = np.std(velocities, axis=0)
-    try:
-        X = np.linspace(1, velocities.shape[1], velocities.shape[1])
-    except Exception:
-        import ipdb; ipdb.set_trace()
+    for eps in range(0, num_episodes, int(num_episodes / 2)):
+        start = eps * episode
+        finish = start + episode
 
-    # Replace NaNs.
-    Y_lowess = np.where(np.isnan(Y), 0, Y)
+        vels = np.array([v[start:finish] for v in velocities])
 
-    lowess = sm.nonparametric.lowess(Y_lowess, X, frac=0.10)
+        Y = np.average(vels, axis=0)
+        Y_std = np.std(vels, axis=0)
+        X = np.linspace(1, vels.shape[1], vels.shape[1])
 
-    plt.plot(X,Y, label='Mean', c=MEAN_CURVE_COLOR)
-    plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+        # Replace NaNs.
+        Y_lowess = np.where(np.isnan(Y), 0, Y)
 
-    if velocities.shape[0] > 1:
-        plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
+        lowess = sm.nonparametric.lowess(Y_lowess, X, frac=0.10)
+
+        plt.plot(X,Y, label='Mean', c=MEAN_CURVE_COLOR)
+        plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+
+        if vels.shape[0] > 1:
+            plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
     plt.xlabel('Minute')
     plt.ylabel('Average Velocity (m/s)')
-    # plt.title('Train: Velocity of the vehicles ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
 
     file_name = '{0}/velocities.pdf'.format(output_folder_path)
@@ -370,82 +337,35 @@ def main(experiment_root_folder=None):
                  differ from the ones taken by the DDPG agent (continuous action
                  agent).
     """
-    if agent_type in ('DDPG', 'MPO'):
-        # Continuous action-schema.
 
-        # TODO: This only works for two-phased intersections.
-        dfs_a = [pd.DataFrame([{i: a[0] for (i, a) in t.items()}
-                                for t in run])
-                                    for run in actions]
-
-        df_concat = pd.concat(dfs_a)
-
-        by_row_index = df_concat.groupby(df_concat.index)
-        df_actions = by_row_index.mean()
-
-        fig = plt.figure()
-        fig.set_size_inches(FIGURE_X, FIGURE_Y)
-
-        window_size = min(len(df_actions)-1, 40)
-
-        for col in df_actions.columns:
-            plt.plot(df_actions[col].rolling(window=window_size).mean(), label=col)
-
-        plt.xlabel('Decision Step')
-        plt.ylabel('Action (Phase-1 allocation)')
-        # plt.title('Actions per intersection')
-        plt.legend()
-
-        plt.savefig('{0}/actions_per_intersection_smoothed.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-        plt.savefig('{0}/actions_per_intersection_smoothed.png'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-
-        plt.close()
-
-        fig = plt.figure()
-        fig.set_size_inches(FIGURE_X, FIGURE_Y)
-
-        for col in df_actions.columns:
-            plt.plot(df_actions[col], label=col)
-
-        plt.xlabel('Decision Step')
-        plt.ylabel('Action (Phase-1 allocation)')
-        # plt.title('Actions per intersection')
-        plt.legend()
-
-        plt.savefig('{0}/actions_per_intersection.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-        plt.savefig('{0}/actions_per_intersection.png'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-
-        plt.close()
-
-    else:
+    fig = plt.figure()
+    fig.set_size_inches(FIGURE_X, FIGURE_Y)
+    for eps in range(0, num_episodes, int(num_episodes / 2)):
         # Discrete action-schema.
-        dfs_a = [pd.DataFrame(run) for run in actions]
+        start = eps * episode
+        finish = start + episode
+
+        dfs_a = [pd.DataFrame(a[start:finish]) for a in actions]
 
         df_concat = pd.concat(dfs_a)
 
         by_row_index = df_concat.groupby(df_concat.index)
         df_actions = by_row_index.mean()
 
-        fig = plt.figure()
-        fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
         window_size = min(len(df_actions)-1, 40)
 
         for col in df_actions.columns:
             plt.plot(df_actions[col].rolling(window=window_size).mean(), label=col)
 
-        # plt.ylim(-0.2,6.2)
-        # plt.yticks(ticks=[0,1,2,3,4,5,6], labels=['(30,70)', '(36,63)', '(43,57)', '(50,50)', '(57,43)', '(63,37)', '(70,30)'])
+    plt.xlabel('Minute')
+    plt.ylabel('Average Action')
+    plt.legend()
 
-        plt.xlabel('Minute')
-        plt.ylabel('Average Action')
-        # plt.title('Actions per intersection')
-        plt.legend()
+    plt.savefig('{0}/actions_per_intersection.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
+    plt.savefig('{0}/actions_per_intersection.png'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
 
-        plt.savefig('{0}/actions_per_intersection.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-        plt.savefig('{0}/actions_per_intersection.png'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-
-        plt.close()
+    plt.close()
         
 
 if __name__ == '__main__':
