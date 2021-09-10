@@ -6,10 +6,9 @@
 *.DS_Store
 
 # prevent sensitive data to into repo
-data/sensors/
+data/emissions/
 
 # prevents data growth
-data/
 analysis/plots
 
 # VIM's swp file
