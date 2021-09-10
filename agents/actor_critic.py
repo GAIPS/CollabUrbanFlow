@@ -25,7 +25,7 @@ def make_actor_dict():
     return defaultdict(lambda: make_trace_dict())
 
 class ACAT(object):
-    """ Actor critic with eligibilty traces. 
+    """ Actor critic with eligibilty traces.
 
         TODO:
             * Store internal state.
@@ -37,7 +37,7 @@ class ACAT(object):
             epsilon_final,
             epsilon_timesteps,
             decision_step=5,
-            alpha=0.25,
+            alpha=0.50,
             beta=0.25,
             decay=0.8,
             gamma=0.8):
