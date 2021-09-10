@@ -212,25 +212,18 @@ def main(experiment_root_folder=None):
             json_data = json.load(f)
 
         # Rewards per time-step.
-        # r = json_data['rewards']
-        # r = pd.DataFrame(r)
-        # rewards1.append(np.sum(r.values, axis=1))
         rewards1.append(resample(json_data, 'rewards', to_records=False))
 
         # aggregate data
-        # rewards2.append(json_data['rewards'])
         rewards2.append(resample(json_data, 'rewards'))
 
         # Number of vehicles per time-step.
-        # vehicles.append(json_data['vehicles'])
         vehicles.append(resample(json_data, 'vehicles'))
 
         # Vehicles' velocity per time-step.
-        # velocities.append(json_data['velocities'])
         velocities.append(resample(json_data, 'velocities'))
 
         # Agent's actions.
-        # actions.append(json_data['actions'])
         actions.append(resample(json_data, 'actions'))
 
         # df = from_json_to_dataframe(json_data)
@@ -257,7 +250,7 @@ def main(experiment_root_folder=None):
     if rewards.shape[0] > 1:
         plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
-    plt.xlabel('Decision Step')
+    plt.xlabel('Minute')
     plt.ylabel('Reward')
     # plt.title('Train rewards ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
@@ -288,8 +281,8 @@ def main(experiment_root_folder=None):
     for col in df_rewards.columns:
         plt.plot(df_rewards[col].rolling(window=window_size).mean(), label=col)
 
-    plt.xlabel('Decision Step')
-    plt.ylabel('Reward')
+    plt.xlabel('Minutes')
+    plt.ylabel('Total Reward')
     # plt.title('Rewards per intersection')
     plt.legend()
 
@@ -318,8 +311,8 @@ def main(experiment_root_folder=None):
     if vehicles.shape[0] > 1:
         plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
-    plt.xlabel('Decision Step')
-    plt.ylabel('Number of vehicles')
+    plt.xlabel('Minutes')
+    plt.ylabel('Total Vehicles')
     # plt.title('Number of vehicles ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
 
@@ -357,8 +350,8 @@ def main(experiment_root_folder=None):
     if velocities.shape[0] > 1:
         plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
-    plt.xlabel('Decision Step')
-    plt.ylabel('Velocity (m/s)')
+    plt.xlabel('Minute')
+    plt.ylabel('Average Velocity (m/s)')
     # plt.title('Train: Velocity of the vehicles ({0} runs)'.format(len(train_files)))
     plt.legend(loc=4)
 
@@ -441,11 +434,11 @@ def main(experiment_root_folder=None):
         for col in df_actions.columns:
             plt.plot(df_actions[col].rolling(window=window_size).mean(), label=col)
 
-        plt.ylim(-0.2,6.2)
-        plt.yticks(ticks=[0,1,2,3,4,5,6], labels=['(30,70)', '(36,63)', '(43,57)', '(50,50)', '(57,43)', '(63,37)', '(70,30)'])
+        # plt.ylim(-0.2,6.2)
+        # plt.yticks(ticks=[0,1,2,3,4,5,6], labels=['(30,70)', '(36,63)', '(43,57)', '(50,50)', '(57,43)', '(63,37)', '(70,30)'])
 
-        plt.xlabel('Decision Step')
-        plt.ylabel('Action')
+        plt.xlabel('Minute')
+        plt.ylabel('Average Action')
         # plt.title('Actions per intersection')
         plt.legend()
 
