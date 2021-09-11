@@ -37,7 +37,7 @@ class ACAT(object):
             epsilon_final,
             epsilon_timesteps,
             decision_step=5,
-            alpha=0.75,
+            alpha=0.9,
             beta=0.25,
             decay=0.8,
             gamma=0.8):
