@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/bin/bash
 sed -i 's/alpha=0.9/alpha=0.25/g' agents/actor_critic.py
 sed -i 's/beta=0.25/beta=0.50/g' agents/actor_critic.py
 git commit -a -m 'Set alpha=0.25 && beta=0.50 #3'
