@@ -37,6 +37,12 @@ STD_CURVE_COLOR = (0.88,0.70,0.678)
 MEAN_CURVE_COLOR = (0.89,0.282,0.192)
 SMOOTHING_CURVE_COLOR = (0.33,0.33,0.33)
 
+def episode_index(eps, total_episodes):
+    if eps == 0: return 1
+    if eps == 1: return int(total_episodes / 2)
+    if eps == 2: return total_episodes
+    raise ValueError
+
 
 def get_arguments():
 
@@ -109,15 +115,15 @@ def resample(data, column, freq=12, to_records=True):
    else:
        return  np.sum(df.values, axis=1)
 
-def episodic_breakdown(data, num_episodes, num_series=3): 
+def episodic_breakdown(data, total_episodes, num_series=3): 
     """Breaks data down into evenly spaced episodes"""
-    episode = int(len(data['rewards']) / num_episodes)
+    episode = int(len(data['rewards']) / total_episodes)
     for k, v in data.items():
         d = []
-        for eps in range(num_episodes):
+        for eps in range(total_episodes):
             start = eps * episode
             finish = start + episode
-            if eps in (0, int(num_episodes / 2), num_episodes-1):
+            if eps in (0, int(total_episodes / 2), total_episodes-1):
                 d += v[start:finish]
         data[k] = v
         
@@ -138,13 +144,13 @@ def main(experiment_root_folder=None):
     print('\nOutput folder:\n{0}\n'.format(output_folder_path))
     os.makedirs(output_folder_path, exist_ok=True)
 
-    # Get episode_time and num_episodes.
+    # Get episode_time and total_episodes.
     train_config_path = list(Path(experiment_root_folder).rglob('train.config'))[0]
     args = parse_train_config(train_config_path)
 
     experiment_time = args['experiment_time']
     episode_time = args['experiment_save_agent_interval']
-    num_episodes = int(experiment_time / episode_time)
+    total_episodes = int(experiment_time / episode_time)
     agent_type = 'A_CAT'
 
     actions = []
@@ -154,6 +160,8 @@ def main(experiment_root_folder=None):
     vehicles = []
     velocities = []
 
+    fn = lambda x: episode_index(x, total_episodes)
+
     # Concatenate data for all runs.
     for run_name in train_files:
 
@@ -162,7 +170,7 @@ def main(experiment_root_folder=None):
         # Load JSON data.
         with open(run_name) as f:
             data = json.load(f)
-        episodic_breakdown(data, num_episodes)
+        episodic_breakdown(data, total_episodes)
 
         # Rewards per time-step.
         rewards1.append(resample(data, 'rewards', to_records=False))
@@ -184,7 +192,7 @@ def main(experiment_root_folder=None):
         (GLOBAL: sum of the reward for all intersections).
     """
     rewards = np.array(rewards1)
-    episode = int(rewards.shape[1] / num_episodes)
+    episode = int(rewards.shape[1] / total_episodes)
 
 
     fig = plt.figure()
@@ -192,18 +200,19 @@ def main(experiment_root_folder=None):
 
 
     X = np.linspace(1, episode, episode)
-    for eps in range(0, num_episodes, int(num_episodes / 2)):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
 
         xx = rewards[:, start:finish]
         Y = np.average(xx, axis=0)
         Y_std = np.std(xx, axis=0)
+        print(fn(eps))
 
 
         lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
 
-        plt.plot(X,Y, label=f'Mean {eps+1}', c=MEAN_CURVE_COLOR)
+        plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
         plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
 
         if rewards.shape[0] > 1:
@@ -228,7 +237,7 @@ def main(experiment_root_folder=None):
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
 
-    for eps in range(0, num_episodes, int(num_episodes / 2)):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
         
@@ -260,7 +269,7 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, num_episodes, int(num_episodes / 2)):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
         
@@ -269,11 +278,10 @@ def main(experiment_root_folder=None):
 
         Y = np.average(vehs, axis=0)
         Y_std = np.std(vehs, axis=0)
-        X = np.linspace(1, vehs.shape[1], vehs.shape[1])
 
         lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
 
-        plt.plot(X,Y, label='Mean', c=MEAN_CURVE_COLOR)
+        plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
         plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
 
         if vehs.shape[0] > 1:
@@ -297,7 +305,7 @@ def main(experiment_root_folder=None):
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    for eps in range(0, num_episodes, int(num_episodes / 2)):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
 
@@ -305,14 +313,13 @@ def main(experiment_root_folder=None):
 
         Y = np.average(vels, axis=0)
         Y_std = np.std(vels, axis=0)
-        X = np.linspace(1, vels.shape[1], vels.shape[1])
 
         # Replace NaNs.
         Y_lowess = np.where(np.isnan(Y), 0, Y)
 
         lowess = sm.nonparametric.lowess(Y_lowess, X, frac=0.10)
 
-        plt.plot(X,Y, label='Mean', c=MEAN_CURVE_COLOR)
+        plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
         plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
 
         if vels.shape[0] > 1:
@@ -340,7 +347,7 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, num_episodes, int(num_episodes / 2)):
+    for eps in range(0, 3):
         # Discrete action-schema.
         start = eps * episode
         finish = start + episode
