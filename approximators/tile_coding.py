@@ -13,6 +13,7 @@ import numpy as np
 from utils import points2length
 
 class TileCodingApproximator(object):
+    
     """Thin wrapper around numpy tiling procedures"""
     def __init__(self, roadnet, flows, num_tilings=1, num_tiles=5,
                  min_green=5, yellow=5, max_green=90):
@@ -57,7 +58,7 @@ class TileCodingApproximator(object):
             tl_id = intersection['id']
             capacities = {}
             for linkids in lightphases:
-                if any(linkids['availableRoadLinks']):
+                if len(linkids['availableRoadLinks']) > 0:
                     linkids = linkids['availableRoadLinks']
                     capacity = 0
                     for linkid in linkids:
