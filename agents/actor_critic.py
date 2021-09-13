@@ -37,10 +37,10 @@ class ACAT(object):
             epsilon_final,
             epsilon_timesteps,
             decision_step=5,
-            alpha=0.25,
+            alpha=0.90,
             beta=0.25,
-            decay=0.8,
-            gamma=0.8):
+            decay=0.9,
+            gamma=0.9):
 
         # Network
         self._tl_ids = [k for k in phases.keys()]
