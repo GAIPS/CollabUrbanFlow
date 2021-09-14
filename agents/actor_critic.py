@@ -14,15 +14,18 @@ from pathlib import Path
 import dill
 import numpy as np
 
+def make_zero():
+    return 0
+
 def make_zero_dict():
-    return defaultdict(lambda : 0)
+    return defaultdict(make_zero)
 
 def make_trace_dict():
-    return defaultdict(lambda: make_zero_dict())
+    return defaultdict(make_zero_dict)
 make_critic_dict = make_trace_dict
 
 def make_actor_dict():
-    return defaultdict(lambda: make_trace_dict())
+    return defaultdict(make_trace_dict)
 
 class ACAT(object):
     """ Actor critic with eligibilty traces. 
@@ -37,10 +40,10 @@ class ACAT(object):
             epsilon_final,
             epsilon_timesteps,
             decision_step=5,
-            alpha=0.90,
+            alpha=0.80,
             beta=0.25,
-            decay=0.9,
-            gamma=0.9):
+            decay=0.8,
+            gamma=0.98):
 
         # Network
         self._tl_ids = [k for k in phases.keys()]
@@ -119,6 +122,7 @@ class ACAT(object):
             policy = self.policy[tl_id]
             actor_trace = self._actor_trace[tl_id]
             critic_trace = self._critic_trace[tl_id]
+
             reward = r_next[tl_id]
             state_prev = s_prev[tl_id]
             state_next = s_next[tl_id]
@@ -138,7 +142,6 @@ class ACAT(object):
                 # Update critic
                 value[s] += self._alpha * delta  * critic_trace[s]
 
-     
     """ Reset eligibilty traces """
     def reset(self):
         self._critic_trace = make_trace_dict()
@@ -150,9 +153,8 @@ class ACAT(object):
         class_name = type(self).__name__.lower()
         file_path = Path(chkpt_dir_path) / chkpt_num / f'{class_name}.chkpt'  
         file_path.parent.mkdir(exist_ok=True)
-        cpy = deepcopy(self)
         with open(file_path, mode='wb') as f:
-            dill.dump(cpy, f)
+            dill.dump(self, f)
 
     # deserializes object -- except for get_wave.
     @classmethod
@@ -161,8 +163,8 @@ class ACAT(object):
         file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'{class_name}.chkpt'  
         with file_path.open(mode='rb') as f:
             new_instance = dill.load(f)
-        return new_instance
 
+        return new_instance
 if __name__ == '__main__':
     # TODO: Implement a main that tells us how to use the object.
     pass
