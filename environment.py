@@ -35,12 +35,12 @@ class Environment(object):
         self.phases = {}
         self.max_speeds = {}
 
-        phases_per_edges = {}
-        edges_max_speeds = {}
         roads = roadnet['roads']
         intersections = [intr for intr in roadnet['intersections'] if not intr['virtual']]
         for intersection in intersections:
             lightphases = intersection['trafficLight']['lightphases']
+            phases_per_edges = {}
+            edges_max_speeds = {}
             p = 0
             for linkids in lightphases:
                 if any(linkids['availableRoadLinks']):
@@ -49,11 +49,10 @@ class Environment(object):
                     for linkid in linkids:
                         # startRoad should be the incoming links.
                         edgeid = intersection['roadLinks'][linkid]['startRoad']
-                        lanes = [lane 
-                            for road in roads if road['id'] == edgeid
+                        lanes = [lane for road in roads if road['id'] == edgeid
                             for lane in road['lanes']]
                         num_lanes = len(lanes)
-                        
+
                         for lid in range(num_lanes):
                             _edgeid = f'{edgeid}_{lid}'
                             if _edgeid not in edges:
