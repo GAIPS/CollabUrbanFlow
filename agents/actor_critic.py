@@ -5,7 +5,6 @@
     "Adaptive traffic signal control with actor-critic methods in a real-world traffic network with different traffic disruption events"
     Aslani, et al. 2017
 """
-import ipdb
 from copy import deepcopy
 from operator import itemgetter
 from collections import defaultdict
@@ -108,7 +107,7 @@ class ACAT(object):
             else:
                 action = np.random.choice([a for a in self.phases[_id]])
             actions[_id] = int(action)
-        if self.eps + self._eps_decrement > self._eps_final:
+        if self.eps + self._eps_decrement > self._eps_final and self._eps_explore:
             self._eps += self._eps_decrement
         return actions 
 
@@ -129,11 +128,14 @@ class ACAT(object):
             action_prev = a_prev[tl_id]
 
             delta = reward + self._gamma * value[state_next] - value[state_prev]
+            assert delta is not None and delta is not np.nan
+            
             # Update trace
             for s in value:
                 critic_trace[s] *= self._gamma * self._decay
                 if s == state_prev: critic_trace[s] += 1
 
+                assert critic_trace[s] is not None and critic_trace[s] is not np.nan
                 for a in (0, 1):
                     actor_trace[(s, a)] *= self._gamma * self._decay
                     if state_prev == s and a == action_prev: actor_trace[(s, a)] += 1
