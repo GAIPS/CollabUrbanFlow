@@ -200,7 +200,7 @@ def main(experiment_root_folder=None):
 
 
     X = np.linspace(1, episode, episode)
-    for eps in range(0, 3):
+    for eps in range(0, total_episodes):
         start = eps * episode
         finish = start + episode
 
@@ -237,7 +237,7 @@ def main(experiment_root_folder=None):
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
 
-    for eps in range(0, 3):
+    for eps in range(0, total_episodes):
         start = eps * episode
         finish = start + episode
         
@@ -269,7 +269,7 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, 3):
+    for eps in range(0, total_episodes):
         start = eps * episode
         finish = start + episode
         
@@ -305,7 +305,7 @@ def main(experiment_root_folder=None):
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    for eps in range(0, 3):
+    for eps in range(0, total_episodes):
         start = eps * episode
         finish = start + episode
 
@@ -347,7 +347,7 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, 3):
+    for eps in range(0, total_episodes):
         # Discrete action-schema.
         start = eps * episode
         finish = start + episode
