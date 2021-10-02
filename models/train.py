@@ -24,7 +24,7 @@ from tqdm.auto import trange
 import numpy as np
 
 from environment import Environment
-from agents.actor_critic import ACAT
+from agents.marlin import MARLIN
 from approximators.tile_coding import TileCodingApproximator
 from utils.file_io import engine_create, engine_load_config, \
                             expr_path_create, expr_config_dump, expr_logs_dump, \
@@ -59,7 +59,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     expr_config_dump(network, expr_path, config, flows, roadnet)
     env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
-    acat = ACAT(env.phases, epsilon_init, epsilon_final, epsilon_timesteps)
+    marlin = MARLIN(env.phases, epsilon_init, epsilon_final, epsilon_timesteps, network)
 
     info_dict = defaultdict(lambda : [])
     s_prev = None
@@ -74,7 +74,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
                 observations = next(gen)
                 if observations is not None:
                     state = approx.approximate(observations)
-                    actions = acat.act(state) 
+                    actions = marlin.act(state)
 
                     if s_prev is None and a_prev is None:
                         s_prev = state
@@ -82,7 +82,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
                     else:
                         r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
-                        acat.update(s_prev, a_prev, r_next, state)
+                        marlin.update(s_prev, a_prev, r_next, state)
                         
                         sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
                         num_vehicles = len(env.speeds)
@@ -103,11 +103,10 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
             chkpt_dir = Path(f"{expr_path}/checkpoints/")
             chkpt_num = str(eps * episode_time)
             os.makedirs(chkpt_dir, exist_ok=True)
-            acat.save_checkpoint(chkpt_dir, chkpt_num)
+            marlin.save_checkpoint(chkpt_dir, chkpt_num)
 
             s_prev = None
             a_prev = None
-            acat.reset()
 
 
     # Store train info dict.
