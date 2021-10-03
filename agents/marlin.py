@@ -41,7 +41,7 @@ class MARLIN(object):
             epsilon_final,
             epsilon_timesteps,
             network,
-            decision_step=10,
+            decision_step=5,
             learning_rate=0.001,
             discount_factor=0.9):
 
