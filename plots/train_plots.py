@@ -170,7 +170,7 @@ def main(experiment_root_folder=None):
         # Load JSON data.
         with open(run_name) as f:
             data = json.load(f)
-        episodic_breakdown(data, total_episodes)
+        # episodic_breakdown(data, total_episodes)
 
         # Rewards per time-step.
         rewards1.append(resample(data, 'rewards', to_records=False))
@@ -199,24 +199,24 @@ def main(experiment_root_folder=None):
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
 
-    X = np.linspace(1, episode, episode)
-    for eps in range(0, 3):
-        start = eps * episode
-        finish = start + episode
+    X = np.linspace(1, rewards.shape[1], rewards.shape[1])
+    # for eps in range(0, 3):
+    #     start = eps * episode
+    #     finish = start + episode
+    #     xx = rewards[:, start:finish]
+    Y = np.average(rewards, axis=0)
+    Y_std = np.std(rewards, axis=0)
+    # print(fn(eps))
 
-        xx = rewards[:, start:finish]
-        Y = np.average(xx, axis=0)
-        Y_std = np.std(xx, axis=0)
-        print(fn(eps))
 
+    lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
 
-        lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
+    # plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
+    plt.plot(X,Y, label=f'Mean', c=MEAN_CURVE_COLOR)
+    plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
 
-        plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
-        plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
-
-        if rewards.shape[0] > 1:
-            plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
+    if rewards.shape[0] > 1:
+        plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
     plt.xlabel('Minute')
     plt.ylabel('Reward')
@@ -237,22 +237,22 @@ def main(experiment_root_folder=None):
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
 
-    for eps in range(0, 3):
-        start = eps * episode
-        finish = start + episode
+    # for eps in range(0, 3):
+    #     start = eps * episode
+    #     finish = start + episode
 
-        dfs_rewards = [pd.DataFrame(r[start:finish]) for r in rewards2]
+    dfs_rewards = [pd.DataFrame(r) for r in rewards2]
 
-        df_concat = pd.concat(dfs_rewards)
+    df_concat = pd.concat(dfs_rewards)
 
-        by_row_index = df_concat.groupby(df_concat.index)
-        df_rewards = by_row_index.mean()
+    by_row_index = df_concat.groupby(df_concat.index)
+    df_rewards = by_row_index.mean()
 
 
-        window_size = min(len(df_rewards)-1, 20)
+    window_size = min(len(df_rewards)-1, 20)
 
-        for col in df_rewards.columns:
-            plt.plot(df_rewards[col].rolling(window=window_size).mean(), label=col)
+    for col in df_rewards.columns:
+        plt.plot(df_rewards[col].rolling(window=window_size).mean(), label=col)
 
     plt.xlabel('Minutes')
     plt.ylabel('Total Reward')
@@ -269,23 +269,24 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, 3):
-        start = eps * episode
-        finish = start + episode
+    # for eps in range(0, 3):
+    #     start = eps * episode
+    #     finish = start + episode
 
-        vehs = np.array([v[start:finish] for v in vehicles])
+    vehs = np.array([v for v in vehicles])
 
 
-        Y = np.average(vehs, axis=0)
-        Y_std = np.std(vehs, axis=0)
+    Y = np.average(vehs, axis=0)
+    Y_std = np.std(vehs, axis=0)
 
-        lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
+    lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
 
-        plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
-        plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+    # plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
+    plt.plot(X,Y, label=f'Mean', c=MEAN_CURVE_COLOR)
+    plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
 
-        if vehs.shape[0] > 1:
-            plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
+    if vehs.shape[0] > 1:
+        plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
     plt.xlabel('Minutes')
     plt.ylabel('Average Vehicles')
@@ -305,25 +306,26 @@ def main(experiment_root_folder=None):
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    for eps in range(0, 3):
-        start = eps * episode
-        finish = start + episode
+    # for eps in range(0, 3):
+    #     start = eps * episode
+    #     finish = start + episode
 
-        vels = np.array([v[start:finish] for v in velocities])
+    vels = np.array([v for v in velocities])
 
-        Y = np.average(vels, axis=0)
-        Y_std = np.std(vels, axis=0)
+    Y = np.average(vels, axis=0)
+    Y_std = np.std(vels, axis=0)
 
-        # Replace NaNs.
-        Y_lowess = np.where(np.isnan(Y), 0, Y)
+    # Replace NaNs.
+    Y_lowess = np.where(np.isnan(Y), 0, Y)
 
-        lowess = sm.nonparametric.lowess(Y_lowess, X, frac=0.10)
+    lowess = sm.nonparametric.lowess(Y_lowess, X, frac=0.10)
 
-        plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
-        plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+    # plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
+    plt.plot(X,Y, label=f'Mean', c=MEAN_CURVE_COLOR)
+    plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
 
-        if vels.shape[0] > 1:
-            plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
+    if vels.shape[0] > 1:
+        plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
 
     plt.xlabel('Minute')
     plt.ylabel('Average Velocity (m/s)')
@@ -347,23 +349,23 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, 3):
-        # Discrete action-schema.
-        start = eps * episode
-        finish = start + episode
+    # for eps in range(0, 3):
+    #     # Discrete action-schema.
+    #     start = eps * episode
+    #     finish = start + episode
 
-        dfs_a = [pd.DataFrame(a[start:finish]) for a in actions]
+    dfs_a = [pd.DataFrame(a) for a in actions]
 
-        df_concat = pd.concat(dfs_a)
+    df_concat = pd.concat(dfs_a)
 
-        by_row_index = df_concat.groupby(df_concat.index)
-        df_actions = by_row_index.mean()
+    by_row_index = df_concat.groupby(df_concat.index)
+    df_actions = by_row_index.mean()
 
 
-        window_size = min(len(df_actions)-1, 40)
+    window_size = min(len(df_actions)-1, 40)
 
-        for col in df_actions.columns:
-            plt.plot(df_actions[col].rolling(window=window_size).mean(), label=col)
+    for col in df_actions.columns:
+        plt.plot(df_actions[col].rolling(window=window_size).mean(), label=col)
 
     plt.xlabel('Minute')
     plt.ylabel('Average Action')
