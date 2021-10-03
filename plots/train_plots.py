@@ -200,7 +200,7 @@ def main(experiment_root_folder=None):
 
 
     X = np.linspace(1, episode, episode)
-    for eps in range(0, total_episodes):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
 
@@ -226,7 +226,7 @@ def main(experiment_root_folder=None):
     plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
     file_name = '{0}/rewards.png'.format(output_folder_path)
     plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
-    
+
     plt.close()
 
     """
@@ -237,10 +237,10 @@ def main(experiment_root_folder=None):
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
 
-    for eps in range(0, total_episodes):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
-        
+
         dfs_rewards = [pd.DataFrame(r[start:finish]) for r in rewards2]
 
         df_concat = pd.concat(dfs_rewards)
@@ -269,10 +269,10 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, total_episodes):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
-        
+
         vehs = np.array([v[start:finish] for v in vehicles])
 
 
@@ -295,7 +295,7 @@ def main(experiment_root_folder=None):
     plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
     file_name = '{0}/vehicles.png'.format(output_folder_path)
     plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
-    
+
     plt.close()
 
     """ 
@@ -305,7 +305,7 @@ def main(experiment_root_folder=None):
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    for eps in range(0, total_episodes):
+    for eps in range(0, 3):
         start = eps * episode
         finish = start + episode
 
@@ -333,7 +333,7 @@ def main(experiment_root_folder=None):
     plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
     file_name = '{0}/velocities.png'.format(output_folder_path)
     plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
-    
+
     plt.close()
 
     """ 
@@ -347,7 +347,7 @@ def main(experiment_root_folder=None):
 
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
-    for eps in range(0, total_episodes):
+    for eps in range(0, 3):
         # Discrete action-schema.
         start = eps * episode
         finish = start + episode
