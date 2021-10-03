@@ -8,12 +8,24 @@
 
 '''
 from functools import lru_cache
+from collections import defaultdict
 
 import numpy as np
 from tqdm import tqdm
 
+from utils.file_io import engine_create, engine_load_config
+
+def g_list(): return []
+def g_dict(): return defaultdict(g_list)
+
+def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
+    eng = engine_create(network, seed=seed, thread_num=4)
+    config, flows, roadnet = engine_load_config(network) 
+
+    return  EnvironmentGymWrapper(roadnet, eng, episode_timesteps=episode_timesteps)
+
 class Environment(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
+    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5, **kwargs):
         '''Environment constructor method.
             Params:
             -------
@@ -98,7 +110,7 @@ class Environment(object):
     def _get_vehicle_speed(self, timestep):
         return self.engine.get_vehicle_speed()
 
-    def _reset(self):
+    def reset(self):
         self._active_phases = {tl_id: (0, 0) for tl_id in self.tl_ids}
         for tl_id in self.tl_ids:
             self.engine.set_tl_phase(tl_id, 0)
@@ -139,14 +151,14 @@ class Environment(object):
                     max_speed = max_speeds[edge]
                     edge_vels = [vels[idv] for idv in ids[edge]]
                     phase_delays += [delay(vel / max_speed) for vel in edge_vels]
-                delays.append(round(float(sum(phase_delays)), 4))
+                delays.append(float(round(sum(phase_delays), 4)))
             observations[tl_id] = tuple(delays)
         return observations
 
 
     def loop(self, num_steps):
         # Before
-        self._reset()
+        self.reset()
         for eps in tqdm(range(num_steps)):
             if self.is_decision_step:
                 actions = yield self.observations
@@ -186,6 +198,61 @@ class Environment(object):
 
             if phase_ctrl is not None:
                 self.engine.set_tl_phase(tl_id, phase_ctrl)
+
+class EnvironmentGymWrapper(Environment):
+    ''' Makes it behave like a gym environment'''
+
+    def __init__(self, *args, **kwargs):
+        super(EnvironmentGymWrapper, self).__init__(*args, **kwargs)
+
+        self.decision_step = 5 
+        if 'episode_timesteps' not in kwargs:
+            raise ValueError('episode timesteps must be provided')
+        else:
+            self.episode_timesteps = kwargs['episode_timesteps']
+        self.info_dict = g_dict()
+
+    def step(self, actions):
+        if not isinstance(actions, dict):
+            if len(self.tl_ids) == 1:
+                actions = {'247123161': actions}
+            else:
+                raise NotImplementedError
+
+        for _ in range(self.decision_step):
+            super(EnvironmentGymWrapper, self).step(actions)
+
+        new_state = self.observations
+        reward = {
+            tl_id: float(np.round(-sum(observ[2:]), 4))
+            for tl_id, observ in  new_state.items() 
+        }
+
+        # Case its a single intersection: simplify outputs
+        if len(self.tl_ids) == 1:
+            new_state = new_state[self.tl_ids[0]]
+            reward = reward[self.tl_ids[0]]
+        done = self.timestep >= self.episode_timesteps
+        self.log(actions)
+        return new_state, reward, done, None
+
+    def reset(self):
+        super(EnvironmentGymWrapper, self).reset()
+        # Case its a single intersection: simplify outputs
+        if len(self.tl_ids) == 1: return self.observations[self.tl_ids[0]]
+        return self.observations
+
+    def log(self, actions):
+        r_next = {_id: -float(sum(_obs[2:])) for _id, _obs in self.observations.items()}
+
+        sum_speeds = sum(([float(vel) for vel in self.speeds.values()]))
+        num_vehicles = len(self.speeds)
+        self.info_dict["rewards"].append(r_next)
+        self.info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+        self.info_dict["vehicles"].append(num_vehicles)
+        self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
+        self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
+        self.info_dict["states"].append(self.observations)
 
 """ features computation """
 # TODO: Compute features from data seperately
