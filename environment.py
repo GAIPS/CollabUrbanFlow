@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 class Environment(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
+    def __init__(self,  roadnet, engine=None, yellow=5, min_green=10, max_green=90, step_size=5):
         '''Environment constructor method.
             Params:
             -------
@@ -149,7 +149,9 @@ class Environment(object):
         self._reset()
         for eps in tqdm(range(num_steps)):
             if self.is_decision_step:
-                actions = yield self.observations
+                obs = self.observations
+            if self.timestep % 10 == 0:
+                actions = yield obs
             else:
                 yield
             self.step(actions)
