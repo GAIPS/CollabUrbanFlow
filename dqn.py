@@ -34,6 +34,7 @@ Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 
 import argparse
 from collections import deque, namedtuple, OrderedDict
+from collections import Iterable
 # from typing import Iterator, List, Tuple
 
 # import gym
@@ -56,6 +57,38 @@ from utils.file_io import parse_train_config, \
 TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
 
+
+def flatten(items, ignore_types=(str, bytes)):
+    """
+
+    Usage:
+    -----
+    > items = [1, 2, [3, 4, [5, 6], 7], 8]
+
+    > # Produces 1 2 3 4 5 6 7 8
+    > for x in flatten(items):
+    >         print(x)
+
+    Ref:
+    ----
+
+    David Beazley. `Python Cookbook.'
+    """
+    for x in items:
+        if isinstance(x, Iterable) and not isinstance(x, ignore_types):
+            yield from flatten(x)
+        else:
+            yield x
+
+def zip2sections(batch, obs_size):
+    states, actions, rewards, dones, next_states = batch
+    return zip(
+        states.split(obs_size, dim=1),
+        actions.split(1, dim=-1),
+        rewards.split(1, dim=-1),
+        next_states.split(obs_size, dim=1)
+    ), dones
+
 class DQN(nn.Module):
     """Simple MLP network.
 
@@ -65,7 +98,7 @@ class DQN(nn.Module):
     )
     """
 
-    def __init__(self, obs_size=4, n_actions=2, hidden_size=32):
+    def __init__(self, obs_size=4, n_actions=2, hidden_size=32, n_inter=1):
         """
         Args:
             obs_size: observation/state size of the environment
@@ -78,11 +111,11 @@ class DQN(nn.Module):
                 nn.Linear(obs_size, hidden_size),
                 nn.ReLU(),
                 nn.Linear(hidden_size, n_actions)
-            ) for _ in range(1)
+            ) for _ in range(n_inter)
         ])
 
-    def forward(self, x):
-        return self.net[0](x.float())
+    def forward(self, i, x):
+        return self.net[i](x.float())
 
 
 # Named tuple for storing experience steps gathered in training
@@ -174,14 +207,15 @@ class Agent:
 
     def reset(self):
         """Resets the environment and updates the state."""
-        self.state = self.env.reset()['247123161']
+        # Assumption: All intersections have the same phase.
+        self.state = list(flatten(self.env.reset().values()))
         
 
-    def get_action(self, net, epsilon, device):
+    def get_action(self, net, i, epsilon, device):
         """Using the given network, decide what action to carry out using an epsilon-greedy policy.
 
         Args:
-            net: DQN network
+            net: list<DQN>
             epsilon: value to determine likelihood of taking a random action
             device: current device
 
@@ -198,7 +232,7 @@ class Agent:
             if device not in ["cpu"]:
                 state = state.cuda(device)
 
-            q_values = net(state)
+            q_values = net(i, state)
             _, action = torch.max(q_values, dim=1)
             action = int(action.item())
 
@@ -217,12 +251,15 @@ class Agent:
             reward, done
         """
 
-        action = self.get_action(net, epsilon, device)
+        actions = {}
+        for i, tl_id in enumerate(self.env.tl_ids):
+            actions[tl_id] = self.get_action(net, i, epsilon, device)
 
         # do step in the environment
-        new_state, reward, done, _ = self.env.step(action)
-        new_state, reward  = new_state['247123161'], reward['247123161']
-        exp = Experience(self.state, action, reward, done, new_state)
+        new_state, reward, done, _ = self.env.step(actions)
+        new_state, reward, actions = \
+                list(flatten(new_state.values())), list(reward.values()), list(actions.values())
+        exp = Experience(self.state, actions, reward, done, new_state)
 
         self.replay_buffer.append(exp)
 
@@ -268,11 +305,12 @@ class DQNLightning(pl.LightningModule):
         # obs_size = self.env.observation_space.shape[0]
         # n_actions = self.env.action_space.n
         self.env = get_environment(network, episode_timesteps=episode_timesteps)
-        obs_size = 4
-        n_actions = 2
+        self.obs_size = 4
+        self.num_actions = 2
+        self.num_intersections = len(self.env.tl_ids)
 
-        self.net = DQN(obs_size, n_actions)
-        self.target_net = DQN(obs_size, n_actions)
+        self.net = DQN(self.obs_size, self.num_actions)
+        self.target_net = DQN(self.obs_size, self.num_actions)
 
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
@@ -300,7 +338,7 @@ class DQNLightning(pl.LightningModule):
         for i in range(steps):
             self.agent.play_step(self.net, epsilon=1.0)
 
-    def forward(self, x):
+    def forward(self, i, x):
         """Passes in a state `x` through the network and gets the `q_values` of each action as an output.
 
         Args:
@@ -309,7 +347,7 @@ class DQNLightning(pl.LightningModule):
         Returns:
             q values
         """
-        output = self.net(x)
+        output = self.net[i](x)
         return output
 
     def dqn_mse_loss(self, batch):
@@ -321,18 +359,24 @@ class DQNLightning(pl.LightningModule):
         Returns:
             loss
         """
-        states, actions, rewards, dones, next_states = batch
+        # split and iterate over sections! -- beware assumption
+        # states, actions, rewards, dones, next_states = batch
+        ni = 0
+        gen, dones = zip2sections(batch, self.obs_size)
+        loss = torch.zeros(self.num_intersections)
+        for s_, a_, r_, s1_ in gen:
+            state_action_values = self.net(ni, s_).gather(1, a_).squeeze(-1)
 
-        state_action_values = self.net(states).gather(1, actions.unsqueeze(-1)).squeeze(-1)
+            with torch.no_grad():
+                next_state_values = self.target_net(ni, s1_).max(1)[0]
+                next_state_values[dones] = 0.0
+                next_state_values = next_state_values.detach()
 
-        with torch.no_grad():
-            next_state_values = self.target_net(next_states).max(1)[0]
-            next_state_values[dones] = 0.0
-            next_state_values = next_state_values.detach()
+            expected_state_action_values = next_state_values * self.gamma + r_.squeeze(-1)
 
-        expected_state_action_values = next_state_values * self.gamma + rewards
-
-        return nn.MSELoss()(state_action_values, expected_state_action_values)
+            loss[ni] = nn.MSELoss()(state_action_values, expected_state_action_values)
+            ni += 1
+        return loss
 
     def training_step(self, batch, nb_batch):
         """Carries out a single step through the environment to update the replay buffer. Then calculates loss
@@ -352,7 +396,7 @@ class DQNLightning(pl.LightningModule):
 
         # step through environment with agent
         reward, done = self.agent.play_step(self.net, epsilon, device)
-        self.episode_reward += reward * 0.001
+        self.episode_reward += sum(reward) * 0.001
 
         # calculates training loss
         loss = self.dqn_mse_loss(batch)
@@ -372,7 +416,7 @@ class DQNLightning(pl.LightningModule):
             "steps": torch.tensor(self.timestep).to(device),
             "total_reward": torch.tensor(self.total_reward).to(device),
             "reward": torch.tensor(reward).to(device),
-            "step_loss": loss.clone().detach().to(device),
+            "step_loss": torch.mean(loss.clone().detach()).to(device),
             "epsilon": torch.tensor(epsilon).to(device)
         }
         return OrderedDict({"loss": loss, "log": log, "progress_bar": log})
