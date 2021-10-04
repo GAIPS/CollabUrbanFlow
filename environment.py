@@ -228,10 +228,6 @@ class EnvironmentGymWrapper(Environment):
             for tl_id, observ in  new_state.items() 
         }
 
-        # Case its a single intersection: simplify outputs
-        if len(self.tl_ids) == 1:
-            new_state = new_state[self.tl_ids[0]]
-            reward = reward[self.tl_ids[0]]
         done = self.timestep >= self.episode_timesteps
         self.log(actions)
         return new_state, reward, done, None
@@ -239,7 +235,6 @@ class EnvironmentGymWrapper(Environment):
     def reset(self):
         super(EnvironmentGymWrapper, self).reset()
         # Case its a single intersection: simplify outputs
-        if len(self.tl_ids) == 1: return self.observations[self.tl_ids[0]]
         return self.observations
 
     def log(self, actions):

@@ -73,14 +73,16 @@ class DQN(nn.Module):
             hidden_size: size of hidden layers
         """
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(obs_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, n_actions)
-        )
+        self.net = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(obs_size, hidden_size),
+                nn.ReLU(),
+                nn.Linear(hidden_size, n_actions)
+            ) for _ in range(1)
+        ])
 
     def forward(self, x):
-        return self.net(x.float())
+        return self.net[0](x.float())
 
 
 # Named tuple for storing experience steps gathered in training
@@ -169,11 +171,10 @@ class Agent:
         self.env = env
         self.replay_buffer = replay_buffer
         self.reset()
-        self.state = self.env.reset()
 
     def reset(self):
         """Resets the environment and updates the state."""
-        self.state = self.env.reset()
+        self.state = self.env.reset()['247123161']
         
 
     def get_action(self, net, epsilon, device):
@@ -220,7 +221,7 @@ class Agent:
 
         # do step in the environment
         new_state, reward, done, _ = self.env.step(action)
-
+        new_state, reward  = new_state['247123161'], reward['247123161']
         exp = Experience(self.state, action, reward, done, new_state)
 
         self.replay_buffer.append(exp)
@@ -355,6 +356,7 @@ class DQNLightning(pl.LightningModule):
 
         # calculates training loss
         loss = self.dqn_mse_loss(batch)
+    
 
         if done:
             self.total_reward = self.episode_reward
