@@ -113,7 +113,7 @@ class DQN(nn.Module):
                     nn.Linear(obs_size, hidden_size),
                     nn.ReLU(),
                     nn.Linear(hidden_size, n_actions)
-                ) 
+                )
             )
         self.net = nn.ModuleList(fcs)
 
@@ -217,7 +217,6 @@ class Agent:
         """Resets the environment and updates the state."""
         # Assumption: All intersections have the same phase.
         self.state = list(flatten(self.env.reset().values()))
-        
 
     def get_action(self, net, i, epsilon, device):
         """Using the given network, decide what action to carry out using an epsilon-greedy policy.
@@ -317,9 +316,6 @@ class DQNLightning(pl.LightningModule):
         self.hidden_size = 32
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
-        self.automatic_optimization = self.num_intersections == 1:
-            
-        
 
         self.net = DQN(
             self.obs_size,
@@ -333,7 +329,6 @@ class DQNLightning(pl.LightningModule):
             self.hidden_size,
             self.num_intersections
         )
-    
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
         self.total_reward = 0
@@ -422,10 +417,12 @@ class DQNLightning(pl.LightningModule):
 
         # calculates training loss
         loss = self.dqn_mse_loss(batch)
-        
-        # VDN
+
+        # MAS -- (1/ A) * sum_{a, A} Q_a(s_a, a_a)
+        # IL "puro" a = 1.. A  Q_a(s_a, a_a)
+        # automatic_optimizer = False
         loss = torch.mean(loss)
-    
+
         if done:
             self.total_reward = self.episode_reward
             self.episode_reward = 0
@@ -440,10 +437,22 @@ class DQNLightning(pl.LightningModule):
             "steps": torch.tensor(self.timestep).to(device),
             "total_reward": torch.tensor(self.total_reward).to(device),
             "reward": torch.mean(torch.tensor(reward).clone().detach()).to(device),
-            "step_loss": loss.clone().detach().to(device),
+
+
+            "exploration_rate": torch.tensor(np.round(epsilon, 4)).to(device),
+            "train_loss": loss.clone().detach().to(device)
+        }
+        status_bar = {
+            "episode_reward": torch.tensor(self.episode_reward).to(device),
+            "status_steps": torch.tensor(self.timestep).to(device),
             "epsilon": torch.tensor(epsilon).to(device)
         }
-        return OrderedDict({"loss": loss, "log": log, "progress_bar": log})
+
+        for k, v in log.items():
+            self.log(k, v, logger=True, prog_bar=False)
+        for k, v in status_bar.items():
+            self.log(k, v, logger=False, prog_bar=True)
+        return loss
 
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
@@ -468,7 +477,7 @@ class DQNLightning(pl.LightningModule):
     # Serializes the object's copy -- sets get_wave to null.
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
         class_name = type(self).__name__.lower()
-        file_path = Path(chkpt_dir_path) / chkpt_num / f'{class_name}.chkpt'  
+        file_path = Path(chkpt_dir_path) / chkpt_num / f'{class_name}.chkpt'
         file_path.parent.mkdir(exist_ok=True)
         with open(file_path, mode='wb') as f:
             dill.dump(self, f)
@@ -489,7 +498,7 @@ class DQNLightning(pl.LightningModule):
         parser.add_argument("--gamma", type=float, default=0.99, help="discount factor")
         parser.add_argument("--sync_rate", type=int, default=500, help="how many frames do we update the target network")
         parser.add_argument("--replay_size", type=int, default=50000, help="capacity of the replay buffer")
-        parser.add_argument( "--warm_start_steps", type=int, default=10,
+        parser.add_argument( "--warm_start_steps", type=int, default=1000,
             help="how many samples do we use to fill our buffer at the start of training",
         )
         parser.add_argument("--epsilon_timesteps", type=int, default=3500, help="what frame should epsilon stop decaying")
@@ -506,7 +515,7 @@ def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
     args.network = train_args['network']
     experiment_time = train_args['experiment_time']
     args.episode_timesteps = train_args['experiment_save_agent_interval']
-    # num_epochs = experiment_time // args.episode_timesteps
+    num_epochs = experiment_time // 10
 
     # Epsilon 
     args.epsilon_init = train_args['epsilon_init']
@@ -531,16 +540,15 @@ def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     # How does number of epoches can be defined by 
     # input parameters.
-    num_epochs =  9000
+    # num_epochs =  9000
     trainer = pl.Trainer(
-            max_steps=-1,
             max_epochs=num_epochs,
             # checkpoint_callbacks=[checkpoint_callback],
+            log_every_n_steps=500,
             val_check_interval=100)
     trainer.fit(model)
     # TODO: Move this routine to env or create a delegate chain.
     expr_logs_dump(expr_path, 'train_log.json', model.agent.env.info_dict)
-        
 
 
 if __name__ == "__main__":
