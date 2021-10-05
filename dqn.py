@@ -12,21 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Deep Reinforcement Learning: Deep Q-network (DQN)
+"""Deep Reinforcement Learning: Value Decomposition Networks 
 
-The template illustrates using Lightning for Reinforcement Learning. The example builds a basic DQN using the
-classic CartPole environment.
+The template illustrates using Lightning for Reinforcement Learning. It builds a Value Decomposition Network from independent learners. VDN extend independent learners by defining a special node that computes the loss w.r.t the MSE of all agents forecast. Individual agents' networks are affected by changes in the weights of other agents through back propagation.
 
 To run the template, just run:
-`python reinforce_learn_Qnet.py`
+`python vdn.py`
 
-After ~1500 steps, you will see the total_reward hitting the max score of 475+.
-Open up TensorBoard to see the metrics:
 
-`tensorboard --logdir default`
+`tensorboard --logdir lightning_logs`
 
-References
-----------
+References:
+-----------
+* Value Decomposition Networks (VDN)
+https://arxiv.org/pdf/1706.05296.pdf
+
+* Deep Q-network (DQN)
 
 [1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
 Second-Edition/blob/master/Chapter06/02_dqn_pong.py
@@ -35,9 +36,7 @@ Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 import argparse
 from collections import deque, namedtuple, OrderedDict
 from collections import Iterable
-# from typing import Iterator, List, Tuple
 
-# import gym
 import numpy as np
 import torch
 import torch.nn as nn
@@ -90,29 +89,33 @@ def zip2sections(batch, obs_size):
     ), dones
 
 class DQN(nn.Module):
-    """Simple MLP network.
+    """Simple DQN network used for function approximation.
 
-    >>> DQN(10, 5)  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
+    >>> DQN(10, 5)  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACML
     DQN(
       (net): Sequential(...)
     )
     """
 
     def __init__(self, obs_size=4, n_actions=2, hidden_size=32, n_inter=1):
-        """
+        """ Defines n_inter independent DQN neutral networks.
         Args:
-            obs_size: observation/state size of the environment
-            n_actions: number of discrete actions available in the environment
-            hidden_size: size of hidden layers
+            obs_size: observation/state size of the environment.
+            n_actions: number of discrete actions available in the environment.
+            hidden_size: size of hidden layers.
+                n_inter: Number of agents or networks
         """
         super().__init__()
-        self.net = nn.ModuleList([
-            nn.Sequential(
-                nn.Linear(obs_size, hidden_size),
-                nn.ReLU(),
-                nn.Linear(hidden_size, n_actions)
-            ) for _ in range(n_inter)
-        ])
+        fcs = []
+        for _ in range(n_inter):
+            fcs.append(
+                nn.Sequential(
+                    nn.Linear(obs_size, hidden_size),
+                    nn.ReLU(),
+                    nn.Linear(hidden_size, n_actions)
+                ) 
+            )
+        self.net = nn.ModuleList(fcs)
 
     def forward(self, i, x):
         return self.net[i](x.float())
@@ -151,6 +154,11 @@ class ReplayBuffer:
         self.buffer.append(experience)
 
     def sample(self, batch_size):
+        """Draes a random sample for experience.
+
+        Args:
+            batch_size maximum number of experience
+        """
         sample_size = min(len(self.buffer), batch_size) 
         indices = np.random.choice(len(self.buffer), sample_size, replace=False)
         states, actions, rewards, dones, next_states = zip(*(self.buffer[idx] for idx in indices))
@@ -223,11 +231,11 @@ class Agent:
             action
         """
         if np.random.random() < epsilon:
-            # TODO: wrapper?
+            # TODO: Actions are change or keep for all intersections.
             # action = self.env.action_space.sample()
             action = np.random.choice((0, 1))
         else:
-            state = torch.tensor([self.state])
+            state = torch.tensor([self.state]).split(4, dim=1)[i]
 
             if device not in ["cpu"]:
                 state = state.cuda(device)
@@ -272,7 +280,7 @@ class Agent:
 class DQNLightning(pl.LightningModule):
     """Basic DQN Model.
 
-    >>> DQNLightning(env="CartPole-v1")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
+    >>> DQNLightning(env="intersection")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
     DQNLightning(
       (net): DQN(
         (net): Sequential(...)
@@ -292,7 +300,7 @@ class DQNLightning(pl.LightningModule):
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
-        self.epsilon_init = epsilon_init 
+        self.epsilon_init = epsilon_init
         self.epsilon_final= epsilon_final
         self.epsilon_timesteps= epsilon_timesteps
         self.sync_rate = sync_rate
@@ -301,17 +309,31 @@ class DQNLightning(pl.LightningModule):
         self.batch_size = batch_size
 
         # Instanciate environment.
-        # self.env = gym.make(env)
+        # TODO: read from environment
         # obs_size = self.env.observation_space.shape[0]
         # n_actions = self.env.action_space.n
         self.env = get_environment(network, episode_timesteps=episode_timesteps)
         self.obs_size = 4
+        self.hidden_size = 32
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
+        self.automatic_optimization = self.num_intersections == 1:
+            
+        
 
-        self.net = DQN(self.obs_size, self.num_actions)
-        self.target_net = DQN(self.obs_size, self.num_actions)
-
+        self.net = DQN(
+            self.obs_size,
+            self.num_actions,
+            self.hidden_size,
+            self.num_intersections
+        )
+        self.target_net = DQN(
+            self.obs_size,
+            self.num_actions,
+            self.hidden_size,
+            self.num_intersections
+        )
+    
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
         self.total_reward = 0
@@ -400,8 +422,10 @@ class DQNLightning(pl.LightningModule):
 
         # calculates training loss
         loss = self.dqn_mse_loss(batch)
+        
+        # VDN
+        loss = torch.mean(loss)
     
-
         if done:
             self.total_reward = self.episode_reward
             self.episode_reward = 0
@@ -415,8 +439,8 @@ class DQNLightning(pl.LightningModule):
         log = {
             "steps": torch.tensor(self.timestep).to(device),
             "total_reward": torch.tensor(self.total_reward).to(device),
-            "reward": torch.tensor(reward).to(device),
-            "step_loss": torch.mean(loss.clone().detach()).to(device),
+            "reward": torch.mean(torch.tensor(reward).clone().detach()).to(device),
+            "step_loss": loss.clone().detach().to(device),
             "epsilon": torch.tensor(epsilon).to(device)
         }
         return OrderedDict({"loss": loss, "log": log, "progress_bar": log})
@@ -460,10 +484,10 @@ class DQNLightning(pl.LightningModule):
     def add_model_specific_args(parent_parser):  # pragma: no-cover
         parser = parent_parser.add_argument_group("DQNLightning")
         parser.add_argument("--batch_size", type=int, default=1000, help="size of the batches")
-        parser.add_argument("--lr", type=float, default=1e-2, help="learning rate")
+        parser.add_argument("--lr", type=float, default=5e-3, help="learning rate")
         parser.add_argument("--network", type=str, default="intersection", help="roadnet name")
         parser.add_argument("--gamma", type=float, default=0.99, help="discount factor")
-        parser.add_argument("--sync_rate", type=int, default=10, help="how many frames do we update the target network")
+        parser.add_argument("--sync_rate", type=int, default=500, help="how many frames do we update the target network")
         parser.add_argument("--replay_size", type=int, default=50000, help="capacity of the replay buffer")
         parser.add_argument( "--warm_start_steps", type=int, default=10,
             help="how many samples do we use to fill our buffer at the start of training",
@@ -505,8 +529,9 @@ def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
     #     mode="min",
     # )
 
-    # trainer = pl.Trainer(gpus=1, accelerator="dp", val_check_interval=100)
-    num_epochs = 7000
+    # How does number of epoches can be defined by 
+    # input parameters.
+    num_epochs =  9000
     trainer = pl.Trainer(
             max_steps=-1,
             max_epochs=num_epochs,
