@@ -97,8 +97,8 @@ def main(test_config_path=None):
         while True:
             observations = next(gen)
             if observations is not None:
-                #state = approx.approximate(observations)
-                state = {tid: (*obs[:2], round(obs[2]), round(obs[3])) for tid, obs in observations.items()}
+                state = approx.approximate(observations)
+                #state = {tid: (*obs[:2], round(obs[2]), round(obs[3])) for tid, obs in observations.items()}
                 actions = marlin.act(state)
 
                 if s_prev is None and a_prev is None:

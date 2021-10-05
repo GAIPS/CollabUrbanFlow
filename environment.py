@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 class Environment(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
+    def __init__(self,  roadnet, engine=None, yellow=5, min_green=10, max_green=90, step_size=5):
         '''Environment constructor method.
             Params:
             -------
@@ -60,9 +60,9 @@ class Environment(object):
                                 edges_max_speeds[_edgeid] = lanes[lid]['maxSpeed']
                     phases_per_edges[p] = edges
                     p += 1
-            self.phases[intersection['id']] = phases_per_edges 
+            self.phases[intersection['id']] = phases_per_edges
             self.max_speeds[intersection['id']] = edges_max_speeds
-            self.tl_ids.append(intersection['id']) 
+            self.tl_ids.append(intersection['id'])
         if engine is not None: self.engine = engine
 
     @property
@@ -79,9 +79,9 @@ class Environment(object):
 
     @property
     def timestep(self):
-        return int(self.engine.get_current_time()) 
+        return int(self.engine.get_current_time())
 
-    """ Dynamic properties are cached""" 
+    """ Dynamic properties are cached"""
     @property
     def vehicles(self):
         return self._get_lane_vehicles(self.timestep)
@@ -119,7 +119,7 @@ class Environment(object):
         for tl_id, internal  in self._active_phases.items():
             active_phase, active_time = internal
 
-            active_time += self.step_size if self.timestep > 0 else 0 
+            active_time += self.step_size if self.timestep > 0 else 0
             self._active_phases[tl_id] = (active_phase, active_time)
         return self._active_phases
 
@@ -132,7 +132,7 @@ class Environment(object):
         for tl_id, phases  in self.phases.items():
             delays = []
             max_speeds = self.max_speeds[tl_id]
-                
+
             for phs, edges in phases.items():
                 phase_delays = []
                 for edge in edges:
@@ -149,7 +149,9 @@ class Environment(object):
         self._reset()
         for eps in tqdm(range(num_steps)):
             if self.is_decision_step:
-                actions = yield self.observations
+                obs = self.observations
+            if self.timestep % 10 == 0:
+                actions = yield obs
             else:
                 yield
             self.step(actions)
