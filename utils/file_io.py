@@ -141,11 +141,14 @@ def parse_test_config(test_config_path):
     test_config.read(test_config_path)
     test_args = test_config['test_args']
 
-    ret['orig_path'] = test_args['run-path']
+    if 'run-path' in test_args:
+        ret['orig_path'] = test_args['run-path']
+        ret['chkpt_dir_path'] = Path(ret['orig_path']) / 'checkpoints'
     ret['rollout_time'] = int(test_args['rollout-time'])
-    ret['chkpt_num'] = int(test_args['chkpt-number'])
-    ret['seed'] = int(test_args['seed'])
-    ret['chkpt_dir_path'] = Path(ret['orig_path']) / 'checkpoints' 
+    if 'chkpt-number' in test_args:
+        ret['chkpt_num'] = int(test_args['chkpt-number'])
+    if 'seed' in test_args:
+        ret['seed'] = int(test_args['seed'])
 
     return ret
 
