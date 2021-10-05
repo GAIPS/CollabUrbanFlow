@@ -41,9 +41,9 @@ class MARLIN(object):
             epsilon_final,
             epsilon_timesteps,
             network,
-            decision_step=5,
-            learning_rate=0.001,
-            discount_factor=0.9):
+            decision_step=10,
+            learning_rate=0.9,
+            discount_factor=0.98):
 
         # Network
         self._tl_ids = [k for k in phases.keys()]
@@ -140,7 +140,6 @@ class MARLIN(object):
     """ Agent update"""
 
     def update(self, s_prev, a_prev, r_next, s_next):
-        # Update actor-critic condition
 
         for id1 in self.tl_ids:
             for id2 in self.edges[id1]:
