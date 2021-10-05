@@ -1,19 +1,28 @@
-'''Environment: Wrapper around engine and feature (delay) producer.
+'''Environment: Wrapper around engine and feature producer.
 
     * Converts microsimulator data into features.
     * Keeps the agent's view from the traffic light.
     * Converts agent's actions into control actions.
     * Observes traffic data and transforms into features.
     * Logs past observations
+    * Produces features: Delay and pressure.
 
 '''
 from functools import lru_cache
-
 import numpy as np
+
 from tqdm import tqdm
 
+from utils.network import get_phases
+
 class Environment(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
+    def __init__(self,
+                 roadnet,
+                 engine=None,
+                 yellow=5,
+                 min_green=5,
+                 max_green=90,
+                 step_size=5):
         '''Environment constructor method.
             Params:
             -------
@@ -31,38 +40,12 @@ class Environment(object):
         self.min_green = min_green
         self.max_green = max_green
         self.step_size = step_size
-        self.tl_ids = []
-        self.phases = {}
-        self.max_speeds = {}
 
-        roads = roadnet['roads']
-        intersections = [intr for intr in roadnet['intersections'] if not intr['virtual']]
-        for intersection in intersections:
-            lightphases = intersection['trafficLight']['lightphases']
-            phases_per_edges = {}
-            edges_max_speeds = {}
-            p = 0
-            for linkids in lightphases:
-                if any(linkids['availableRoadLinks']):
-                    linkids = linkids['availableRoadLinks']
-                    edges = []
-                    for linkid in linkids:
-                        # startRoad should be the incoming links.
-                        edgeid = intersection['roadLinks'][linkid]['startRoad']
-                        lanes = [lane for road in roads if road['id'] == edgeid
-                            for lane in road['lanes']]
-                        num_lanes = len(lanes)
+        _inc, _out, _lmt =  get_phases(roadnet)
+        self._incoming_roadlinks = _inc
+        self._outgoing_roadlinks = _out
+        self._speed_limit = _lmt
 
-                        for lid in range(num_lanes):
-                            _edgeid = f'{edgeid}_{lid}'
-                            if _edgeid not in edges:
-                                edges.append(_edgeid)
-                                edges_max_speeds[_edgeid] = lanes[lid]['maxSpeed']
-                    phases_per_edges[p] = edges
-                    p += 1
-            self.phases[intersection['id']] = phases_per_edges 
-            self.max_speeds[intersection['id']] = edges_max_speeds
-            self.tl_ids.append(intersection['id']) 
         if engine is not None: self.engine = engine
 
     @property
@@ -79,9 +62,29 @@ class Environment(object):
 
     @property
     def timestep(self):
-        return int(self.engine.get_current_time()) 
+        return int(self.engine.get_current_time())
 
-    """ Dynamic properties are cached""" 
+    @property
+    def tl_ids(self):
+        return sorted(self.phases.keys())
+
+    @property
+    def phases(self):
+        return self._incoming_roadlinks
+
+    @property
+    def incoming_roadlinks(self):
+        return self._incoming_roadlinks
+
+    @property
+    def outgoing_roadlinks(self):
+        return self._outgoing_roadlinks
+
+    @property
+    def max_speeds(self):
+        return self._speed_limit
+
+    """ Dynamic properties are cached"""
     @property
     def vehicles(self):
         return self._get_lane_vehicles(self.timestep)
@@ -186,6 +189,7 @@ class Environment(object):
 
             if phase_ctrl is not None:
                 self.engine.set_tl_phase(tl_id, phase_ctrl)
+
 
 """ features computation """
 # TODO: Compute features from data seperately
