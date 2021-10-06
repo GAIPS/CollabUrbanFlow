@@ -5,7 +5,6 @@
     "Multiagent Reinforcement Learning for Integrated Network of Adaptive Traffic Signal Controllers (MARLIN-ATSC): Methodology and Large-Scale Application on Downtown Toronto"
     El-Tantawy, et al. 2013
 """
-import ipdb
 from copy import deepcopy
 from operator import itemgetter
 from collections import defaultdict
