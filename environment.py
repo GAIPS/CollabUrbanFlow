@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 class Environment(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=10):
+    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
         '''Environment constructor method.
             Params:
             -------
@@ -78,10 +78,6 @@ class Environment(object):
         return self.timestep % self.step_size == 0
 
     @property
-    def is_actuation_step(self):
-        return self.timestep % self.yellow == 0
-
-    @property
     def timestep(self):
         return int(self.engine.get_current_time()) 
 
@@ -123,7 +119,7 @@ class Environment(object):
         for tl_id, internal  in self._active_phases.items():
             active_phase, active_time = internal
 
-            active_time += self.step_size if self.timestep > 0 else 0
+            active_time += self.step_size if self.timestep > 0 else 0 
             self._active_phases[tl_id] = (active_phase, active_time)
         return self._active_phases
 
@@ -136,7 +132,7 @@ class Environment(object):
         for tl_id, phases  in self.phases.items():
             delays = []
             max_speeds = self.max_speeds[tl_id]
-
+                
             for phs, edges in phases.items():
                 phase_delays = []
                 for edge in edges:
@@ -158,16 +154,17 @@ class Environment(object):
                 yield
             self.step(actions)
         return 0
-
+        
+    
     def step(self, actions={}):
         # Handle controller actions
         # KEEP or SWITCH phase
         # Maps agent action to controller action
         # G -> Y -> G -> Y
-        if self.is_actuation_step: self._phase_ctl(actions)
+        if self.is_decision_step: self._phase_ctl(actions)
         self.engine.next_step()
 
-    """Performs phase control"""
+    """Performs phase control""" 
     def _phase_ctl(self, actions):
         for tl_id, active_phases in self._active_phases.items():
             phases = self.phases[tl_id]
@@ -178,13 +175,13 @@ class Environment(object):
                 # transitions to green
                 phase_ctrl = current_phase * 2
 
-            elif (current_time >= self.yellow + self.min_green and current_action == 1) or \
+            elif (current_time > self.yellow + self.min_green and current_action == 1) or \
                     (current_time == self.max_green):
                 # transitions to yellow
                 phase_ctrl = (current_phase * 2 + 1) % (2 * len(phases))
 
                 # adjust log
-                next_phase = (current_phase + 1) % len(phases)
+                next_phase = (current_phase + 1) % len(phases) 
                 self._active_phases[tl_id] = (next_phase, 0)
 
             if phase_ctrl is not None:
