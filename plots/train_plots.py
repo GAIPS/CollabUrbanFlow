@@ -37,12 +37,6 @@ STD_CURVE_COLOR = (0.88,0.70,0.678)
 MEAN_CURVE_COLOR = (0.89,0.282,0.192)
 SMOOTHING_CURVE_COLOR = (0.33,0.33,0.33)
 
-def episode_index(eps, total_episodes):
-    if eps == 0: return 1
-    if eps == 1: return int(total_episodes / 2)
-    if eps == 2: return total_episodes
-    raise ValueError
-
 
 def get_arguments():
 
@@ -159,8 +153,6 @@ def main(experiment_root_folder=None):
     rewards2 = []
     vehicles = []
     velocities = []
-
-    fn = lambda x: episode_index(x, total_episodes)
 
     # Concatenate data for all runs.
     for run_name in train_files:

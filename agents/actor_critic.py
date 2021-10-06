@@ -38,10 +38,10 @@ class ACAT(object):
             epsilon_init,
             epsilon_final,
             epsilon_timesteps,
-            decision_step=10,
-            alpha=0.80,
-            beta=0.25,
-            decay=0.8,
+            decision_step=5,
+            alpha=0.90,
+            beta=0.3,
+            decay=0.55,
             gamma=0.98):
 
         # Network
