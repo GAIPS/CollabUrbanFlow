@@ -13,7 +13,7 @@ import numpy as np
 from tqdm import tqdm
 
 class Environment(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=10, max_green=90, step_size=5):
+    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5):
         '''Environment constructor method.
             Params:
             -------
@@ -177,7 +177,7 @@ class Environment(object):
                 # transitions to green
                 phase_ctrl = current_phase * 2
 
-            elif (current_time > self.yellow + self.min_green and current_action == 1) or \
+            elif (current_time >= self.yellow + self.min_green and current_action == 1) or \
                     (current_time == self.max_green):
                 # transitions to yellow
                 phase_ctrl = (current_phase * 2 + 1) % (2 * len(phases))

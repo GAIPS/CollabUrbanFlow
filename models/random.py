@@ -1,5 +1,6 @@
 import json
 import os
+import random
 from pathlib import Path
 from shutil import copyfile
 
@@ -41,51 +42,43 @@ def main(experiment_dir=None):
         json.dump(config, f)
     copyfile(TRAIN_CONFIG_PATH, target_path / 'config/train.config')
 
-    with open('data/networks/' + network_name + '/roadnet.json', 'r') as f:
-        network = json.load(f)
-
     eng = engine_create(Path('data/networks/' + network_name + "/config.json"), thread_num=4)
-    env = Environment(roadnet, eng, step_size=1, yellow=6)
+    env = Environment(roadnet, eng)
 
     info_dict = make_info_dict()
     emissions = []
+
+    with open('data/networks/' + network_name + '/roadnet.json', 'r') as f:
+        network = json.load(f)
     intersections = [item for item in network['intersections'] if not item['virtual']]
-    phasectl = [(-1, 0)] * len(intersections)
 
-    env._reset()
-    for step in range(rollout_time):
-        observations = env.observations
-        if observations is not None:
-            actions = {}
-            for i, intersection in enumerate(intersections):
-                phaseid, next_change = phasectl[i]
-                tl = [inter for inter in intersection['trafficLight']['lightphases'] if
-                      len(inter['availableRoadLinks']) > 0]
-                if next_change == step:
-                    actions[intersection['id']] = 1
-                    phaseid = (phaseid + 1) % len(tl)
 
-                    yellow = env.yellow if step != 0 else 0
-                    next_change = step + tl[phaseid]['time'] + yellow
-                    phasectl[i] = (phaseid, next_change)
-                else:
-                    actions[intersection['id']] = 0
+    gen = env.loop(rollout_time)
+    try:
+        while True:
+            observations = next(gen)
+            if observations is not None:
+                actions = {}
+                for i, intersection in enumerate(intersections):
+                    phases = [inter for inter in intersection['trafficLight']['lightphases'] if
+                          len(inter['availableRoadLinks']) > 0]
+                    actions[intersection["id"]] = random.choice(range(len(phases)))
 
-            env._phase_ctl(actions)
+                r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
+                sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
+                num_vehicles = len(env.speeds)
 
-            r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
-            sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
-            num_vehicles = len(env.speeds)
-            info_dict["rewards"].append(r_next)
-            info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-            info_dict["vehicles"].append(num_vehicles)
-            info_dict["observation_spaces"].append(observations)  # No function approximation.
-            info_dict["actions"].append(actions)
-            info_dict["states"].append(observations)
+                info_dict["rewards"].append(r_next)
+                info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+                info_dict["vehicles"].append(num_vehicles)
+                info_dict["observation_spaces"].append(observations)  # No function approximation.
+                info_dict["actions"].append(actions)
+                info_dict["states"].append(observations)
 
-            eng.next_step()
+                gen.send(actions)
 
-        update_emissions(eng, emissions)
+    except StopIteration as e:
+        pass
 
     expr_logs_dump(target_path, 'emission_log.json', emissions)
 
