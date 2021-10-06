@@ -14,6 +14,9 @@ import numpy as np
 from tqdm import tqdm
 
 from utils.network import get_phases
+from features import compute_delay, compute_pressure
+
+FEATURE_CHOICE=('delay', 'pressure')
 
 class Environment(object):
     def __init__(self,
@@ -22,7 +25,8 @@ class Environment(object):
                  yellow=5,
                  min_green=5,
                  max_green=90,
-                 step_size=5):
+                 step_size=5,
+                 feature='delay'):
         '''Environment constructor method.
             Params:
             -------
@@ -45,6 +49,11 @@ class Environment(object):
         self._incoming_roadlinks = _inc
         self._outgoing_roadlinks = _out
         self._speed_limit = _lmt
+
+        if feature not in FEATURE_CHOICE:
+            raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
+        self.feature = feature
+
 
         if engine is not None: self.engine = engine
 
@@ -127,25 +136,11 @@ class Environment(object):
         return self._active_phases
 
     def _update_features(self):
-        observations = {}
-
-        ids = self.vehicles
-        vels = self.speeds
-
-        for tl_id, phases  in self.phases.items():
-            delays = []
-            max_speeds = self.max_speeds[tl_id]
-                
-            for phs, edges in phases.items():
-                phase_delays = []
-                for edge in edges:
-                    max_speed = max_speeds[edge]
-                    edge_vels = [vels[idv] for idv in ids[edge]]
-                    phase_delays += [delay(vel / max_speed) for vel in edge_vels]
-                delays.append(round(float(sum(phase_delays)), 4))
-            observations[tl_id] = tuple(delays)
-        return observations
-
+        if self.feature == 'delay':
+            return compute_delay(self.phases, self.vehicles,
+                                 self.speeds, self.max_speeds)
+        return compute_pressure(self.incoming_roadlinks,
+                                self.outgoing_roadlinks, self.vehicles)
 
     def loop(self, num_steps):
         # Before
@@ -189,9 +184,3 @@ class Environment(object):
 
             if phase_ctrl is not None:
                 self.engine.set_tl_phase(tl_id, phase_ctrl)
-
-
-""" features computation """
-# TODO: Compute features from data seperately
-def delay(x):
-    return np.exp(-5 * x)
