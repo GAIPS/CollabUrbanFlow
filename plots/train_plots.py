@@ -68,24 +68,24 @@ def get_arguments():
     return parser.parse_args()
 
 
-def resample(data, column, freq=12, to_records=True):
+def resample(data, column, freq=6, to_records=True):
    """ Resample dataframe 
 
-    Expect ticks to be 5 to 5 seconds. Aggregate 12
-    5 to 5 seconds yielding minute data.
+    Expect ticks to be 10 to 10 seconds. Aggregate 6
+    10 to 10 seconds yielding minute data.
 
     Params:
     ------
     * data: dict
         info from training or testing aggregated 
-        by 5 seconds (decision time).
+        by 10 seconds (decision time).
 
     * column: str
         a metric from info dict 
         choice = ('actions', 'velocities', 'rewards', 'vehicles')
 
     * freq: int
-        aggregation period (12*5 --> 60)
+        aggregation period (6*10 --> 60)
 
     * to_records: Boolean
         if records is true returns a list else
