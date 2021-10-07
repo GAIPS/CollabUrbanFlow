@@ -9,14 +9,14 @@
 
 '''
 from functools import lru_cache
-import numpy as np
 
 from tqdm import tqdm
 
-from utils.network import get_phases
 from features import compute_delay, compute_pressure
+from utils.network import get_phases
 
-FEATURE_CHOICE=('delay', 'pressure')
+FEATURE_CHOICE = ('delay', 'pressure')
+
 
 class Environment(object):
     def __init__(self,
@@ -45,7 +45,7 @@ class Environment(object):
         self.max_green = max_green
         self.step_size = step_size
 
-        _inc, _out, _lmt =  get_phases(roadnet)
+        _inc, _out, _lmt = get_phases(roadnet)
         self._incoming_roadlinks = _inc
         self._outgoing_roadlinks = _out
         self._speed_limit = _lmt
@@ -53,7 +53,6 @@ class Environment(object):
         if feature not in FEATURE_CHOICE:
             raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
         self.feature = feature
-
 
         if engine is not None: self.engine = engine
 
@@ -66,8 +65,12 @@ class Environment(object):
         self._engine = engine
 
     @property
-    def is_decision_step(self):
+    def is_observation_step(self):
         return self.timestep % self.step_size == 0
+
+    @property
+    def is_update_step(self):
+        return self.timestep % 10 == 0
 
     @property
     def timestep(self):
@@ -94,6 +97,7 @@ class Environment(object):
         return self._speed_limit
 
     """ Dynamic properties are cached"""
+
     @property
     def vehicles(self):
         return self._get_lane_vehicles(self.timestep)
@@ -128,7 +132,7 @@ class Environment(object):
 
     # TODO: include switch
     def _update_active_phases(self):
-        for tl_id, internal  in self._active_phases.items():
+        for tl_id, internal in self._active_phases.items():
             active_phase, active_time = internal
 
             active_time += self.step_size if self.timestep > 0 else 0
@@ -146,25 +150,25 @@ class Environment(object):
         # Before
         self._reset()
         for eps in tqdm(range(num_steps)):
-            if self.is_decision_step:
+            if self.is_observation_step:
                 obs = self.observations
-            if self.timestep % 10 == 0:
+            if self.is_update_step:
                 actions = yield obs
             else:
                 yield
             self.step(actions)
         return 0
 
-
     def step(self, actions={}):
         # Handle controller actions
         # KEEP or SWITCH phase
         # Maps agent action to controller action
         # G -> Y -> G -> Y
-        if self.is_decision_step: self._phase_ctl(actions)
+        if self.is_observation_step: self._phase_ctl(actions)
         self.engine.next_step()
 
     """Performs phase control"""
+
     def _phase_ctl(self, actions):
         for tl_id, active_phases in self._active_phases.items():
             phases = self.phases[tl_id]

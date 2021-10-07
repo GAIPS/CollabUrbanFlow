@@ -20,7 +20,7 @@ from cityflow import Engine
 
 # TODO: Build a factory
 from environment import Environment
-from controllers import MaxPressure, Random
+from controllers import MaxPressure, Random, Static
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump, \
                             expr_path_create, expr_config_dump
 # prevent randomization
@@ -51,7 +51,21 @@ def g_dict(): return defaultdict(g_list)
 def get_controller(ts_type, config_folder):
     if ts_type == 'max_pressure': return MaxPressure(5, 90, 5)
     if ts_type == 'random': return Random(config_folder)
+    if ts_type == 'static': return Static(config_folder)
     raise ValueError(f'{ts_type} not defined.')
+
+def update_info_dict(actions, env, info_dict, observations):
+    r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
+    sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
+    num_vehicles = len(env.speeds)
+    info_dict["rewards"].append(r_next)
+    info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+    info_dict["vehicles"].append(num_vehicles)
+    info_dict["observation_spaces"].append(observations)  # No function approximation.
+    info_dict["actions"].append(actions)
+    info_dict["states"].append(observations)
+
+
 
 def main(baseline_config_path=None):
 
@@ -84,31 +98,32 @@ def main(baseline_config_path=None):
     with (config_dir_path / 'config.json').open('w') as f: json.dump(config, f)
 
     ctrl = get_controller(ts_type, config_dir_path)
-    env = Environment(roadnet, eng, feature=ctrl.feature)
+    env = Environment(roadnet, eng, feature=ctrl.feature, step_size=ctrl.step_size, yellow=ctrl.yellow)
     # TODO: Allow for more types of controllers.
 
     info_dict = g_dict()
     emissions = []
-    gen = env.loop(rollout_time)
+    if ts_type in ['static', 'webster']:
+        env._reset()
+    else:
+        gen = env.loop(rollout_time)
     try:
         while True:
-            observations = next(gen)
-            if observations is not None:
+            if ts_type in ['static', 'webster']:
+                observations = env.observations
+            else:
+                observations = next(gen)
 
+            if observations is not None:
                 actions = ctrl.act(observations)
 
-                r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
+                update_info_dict(actions, env, info_dict, observations)
 
-                sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
-                num_vehicles = len(env.speeds)
-                info_dict["rewards"].append(r_next)
-                info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-                info_dict["vehicles"].append(num_vehicles)
-                info_dict["observation_spaces"].append(observations) # No function approximation.
-                info_dict["actions"].append(actions)
-                info_dict["states"].append(observations)
-
-                gen.send(actions)
+                if ts_type in ['static', 'webster']:
+                    env._phase_ctl(actions)
+                    eng.next_step()
+                else:
+                    gen.send(actions)
             update_emissions(eng, emissions)
 
     except StopIteration as e:
@@ -117,6 +132,8 @@ def main(baseline_config_path=None):
     
     info_dict['id'] = f'{ts_type}-{seed}'
     return (target_path, info_dict)
+
+
 
 if __name__ == '__main__':
     main(run_path='train.config', baseline='max_pressure')
