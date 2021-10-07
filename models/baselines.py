@@ -100,12 +100,16 @@ def main(baseline_config_path=None):
 
     ctrl = get_controller(ts_type, config_dir_path)
     env = Environment(roadnet, eng, feature=ctrl.feature, step_size=ctrl.step_size, yellow=ctrl.yellow)
+
+    # Webster needs env data to initialize
     if ts_type == 'webster':
         ctrl.set_env(env)
     # TODO: Allow for more types of controllers.
 
     info_dict = g_dict()
     emissions = []
+
+    # Run step by step for static and webster
     if ts_type in ['static', 'webster']:
         env._reset()
     else:

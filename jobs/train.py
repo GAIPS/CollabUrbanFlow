@@ -77,13 +77,15 @@ def train_batch():
     if len(train_seeds) != num_runs:
         raise configparser.Error('Number of seeds in run.config `train_seeds`'
                         ' must match the number of runs (`num_runs`) argument.')
+    train_config = configparser.ConfigParser()
+    train_config.read('config/train.config')
 
     print('\nArguments (jobs/train.py):')
     print('------------------------')
     print('Number of runs: {0}'.format(num_runs))
     print('Number of processors: {0}'.format(num_processors))
-    print('Train seeds: {0}\n'.format(train_seeds))
-
+    print('Train seeds: {0}'.format(train_seeds))
+    print('Agent: {0}\n'.format(train_config['agent_type']['agent_type']))
     # Assess total number of processors.
     processors_total = mp.cpu_count()
     print(f'Total number of processors available: {processors_total}\n')
@@ -94,8 +96,7 @@ def train_batch():
         print(f'WARNING: Number of processors downgraded to {num_processors}\n')
 
     # Read train.py arguments from train.config file.
-    train_config = configparser.ConfigParser()
-    train_config.read('config/train.config')
+
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S.%f')
     print(f'Experiment timestamp: {timestamp}\n')
 

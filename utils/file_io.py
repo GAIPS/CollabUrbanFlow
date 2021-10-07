@@ -126,7 +126,7 @@ def parse_train_config(train_config_path,
     ret['network'] = train_args['network']
     ret['experiment_time']= int(train_args['experiment_time'])
     ret['experiment_save_agent_interval']= int(train_args['experiment_save_agent_interval'])
-
+    ret['agent_type'] = train_config["agent_type"]["agent_type"]
     # Epsilon 
     ret['epsilon_init'] = float(train_args['epsilon_init'])
     ret['epsilon_final'] = float(train_args['epsilon_final'])

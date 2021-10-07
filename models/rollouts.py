@@ -16,15 +16,24 @@ from tqdm.auto import trange
 import configparser
 import numpy as np
 from cityflow import Engine
-
 # TODO: Build a factory
+from models.train import TRAIN_CONFIG_PATH
 from agents.actor_critic import ACAT
+from agents.marlin import MARLIN
 from environment import Environment
 from approximators.tile_coding import TileCodingApproximator
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump, \
-                            expr_path_test_target, parse_test_config
+    expr_path_test_target, parse_test_config, parse_train_config
+
 # prevent randomization
 PYTHONHASHSEED=-1
+
+
+def get_controller(agent_type, chkpt_dir_path, chkpt_num):
+    if agent_type == 'ACAT': return ACAT.load_checkpoint(chkpt_dir_path, chkpt_num)
+    if agent_type == 'MARLIN': return MARLIN.load_checkpoint(chkpt_dir_path, chkpt_num)
+    raise ValueError(f'{agent_type} not defined.')
+
 
 
 def update_emissions(eng, emissions):
@@ -82,8 +91,10 @@ def main(test_config_path=None):
     env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
 
-    acat = ACAT.load_checkpoint(chkpt_dir_path, chkpt_num)
-    acat.stop()
+    train_args = parse_train_config(TRAIN_CONFIG_PATH)
+    agent_type = train_args['agent_type']
+    ctrl = get_controller(agent_type, chkpt_dir_path, chkpt_num)
+    ctrl.stop()
 
     s_prev = None
     a_prev = None
@@ -98,7 +109,7 @@ def main(test_config_path=None):
             observations = next(gen)
             if observations is not None:
                 state = approx.approximate(observations)
-                actions = acat.act(state) 
+                actions = ctrl.act(state)
 
                 if s_prev is None and a_prev is None:
                     s_prev = state
