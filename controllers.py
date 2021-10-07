@@ -2,6 +2,8 @@
     * Reactive agents
 """
 import copy
+import json
+import random
 
 import numpy as np
 
@@ -59,4 +61,21 @@ class MaxPressure:
                 next_phase = (current_phase + 1) % (len(ts_state) - 2)
                 actions[ts_id] = \
                     int(ts_state[2:][next_phase] > ts_state[2:][current_phase])
+        return actions
+
+class Random:
+
+    def __init__(self, config_folder):
+        self.ts_type = 'random'
+        self.feature = 'delay'
+        with open(config_folder / 'roadnet.json', 'r') as f:
+            network = json.load(f)
+        self.intersections = [item for item in network['intersections'] if not item['virtual']]
+
+    def act(self, state):
+        actions = {}
+        for i, intersection in enumerate(self.intersections):
+            phases = [inter for inter in intersection['trafficLight']['lightphases'] if
+                      len(inter['availableRoadLinks']) > 0]
+            actions[intersection["id"]] = random.choice(range(len(phases)))
         return actions

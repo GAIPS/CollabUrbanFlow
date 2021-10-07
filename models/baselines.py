@@ -20,7 +20,7 @@ from cityflow import Engine
 
 # TODO: Build a factory
 from environment import Environment
-from controllers import MaxPressure
+from controllers import MaxPressure, Random
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump, \
                             expr_path_create, expr_config_dump
 # prevent randomization
@@ -48,8 +48,9 @@ def update_emissions(eng, emissions):
 def simple_hash(x): return hash(x) % (11 * 255)
 def g_list(): return []
 def g_dict(): return defaultdict(g_list)
-def get_controller(ts_type):
+def get_controller(ts_type, config_folder):
     if ts_type == 'max_pressure': return MaxPressure(5, 90, 5)
+    if ts_type == 'random': return Random(config_folder)
     raise ValueError(f'{ts_type} not defined.')
 
 def main(baseline_config_path=None):
@@ -82,14 +83,13 @@ def main(baseline_config_path=None):
     config['seed'] = seed
     with (config_dir_path / 'config.json').open('w') as f: json.dump(config, f)
 
-    ctrl = get_controller(ts_type)
+    ctrl = get_controller(ts_type, config_dir_path)
     env = Environment(roadnet, eng, feature=ctrl.feature)
     # TODO: Allow for more types of controllers.
 
     info_dict = g_dict()
     emissions = []
     gen = env.loop(rollout_time)
-    actions = {}
     try:
         while True:
             observations = next(gen)
