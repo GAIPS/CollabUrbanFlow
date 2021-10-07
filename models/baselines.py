@@ -20,7 +20,7 @@ from cityflow import Engine
 
 # TODO: Build a factory
 from environment import Environment
-from controllers import MaxPressure, Random, Static
+from controllers import MaxPressure, Random, Static, Webster
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump, \
                             expr_path_create, expr_config_dump
 # prevent randomization
@@ -52,6 +52,7 @@ def get_controller(ts_type, config_folder):
     if ts_type == 'max_pressure': return MaxPressure(5, 90, 5)
     if ts_type == 'random': return Random(config_folder)
     if ts_type == 'static': return Static(config_folder)
+    if ts_type == 'webster': return Webster(config_folder)
     raise ValueError(f'{ts_type} not defined.')
 
 def update_info_dict(actions, env, info_dict, observations):
@@ -99,6 +100,8 @@ def main(baseline_config_path=None):
 
     ctrl = get_controller(ts_type, config_dir_path)
     env = Environment(roadnet, eng, feature=ctrl.feature, step_size=ctrl.step_size, yellow=ctrl.yellow)
+    if ts_type == 'webster':
+        ctrl.set_env(env)
     # TODO: Allow for more types of controllers.
 
     info_dict = g_dict()
@@ -122,12 +125,18 @@ def main(baseline_config_path=None):
                 if ts_type in ['static', 'webster']:
                     env._phase_ctl(actions)
                     eng.next_step()
+                    if eng.get_current_time() == rollout_time:
+                        break
                 else:
                     gen.send(actions)
             update_emissions(eng, emissions)
 
     except StopIteration as e:
         result = e.value
+
+    #print global timings
+    if ts_type == 'webster':
+        ctrl.terminate()
     expr_logs_dump(target_path, 'emission_log.json', emissions)
     
     info_dict['id'] = f'{ts_type}-{seed}'
