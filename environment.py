@@ -213,12 +213,6 @@ class EnvironmentGymWrapper(Environment):
         self.info_dict = g_dict()
 
     def step(self, actions):
-        if not isinstance(actions, dict):
-            if len(self.tl_ids) == 1:
-                actions = {'247123161': actions}
-            else:
-                raise NotImplementedError
-
         for _ in range(self.decision_step):
             super(EnvironmentGymWrapper, self).step(actions)
 

@@ -11,22 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Deep Reinforcement Learning for Multi-agent system.
 
-"""Deep Reinforcement Learning: Value Decomposition Networks 
+* Deep Q-networks
 
-The template illustrates using Lightning for Reinforcement Learning. It builds a Value Decomposition Network from independent learners. VDN extend independent learners by defining a special node that computes the loss w.r.t the MSE of all agents forecast. Individual agents' networks are affected by changes in the weights of other agents through back propagation.
+* Using Deep Q-networks for independent learners.
+
+* TODO: 
+    Creates a MAS class that controls agents.
+    Separate buffers.
 
 To run the template, just run:
-`python vdn.py`
-
+`python dqn.py`
 
 `tensorboard --logdir lightning_logs`
 
 References:
 -----------
-* Value Decomposition Networks (VDN)
-https://arxiv.org/pdf/1706.05296.pdf
-
 * Deep Q-network (DQN)
 
 [1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
@@ -78,23 +79,14 @@ def flatten(items, ignore_types=(str, bytes)):
             yield from flatten(x)
         else:
             yield x
-# TODO: ModuleList
-# def zip2sections(batch, obs_size):
-#     states, actions, rewards, dones, next_states = batch
-#     return zip(
-#         states.split(obs_size, dim=1),
-#         actions.split(1, dim=-1),
-#         rewards.split(1, dim=-1),
-#         next_states.split(obs_size, dim=1)
-#     ), dones
 
-def zip2sections(batch, obs_size, inter):
+def get_experience(batch, obs_size, agent_index):
     states, actions, rewards, dones, next_states = batch
     return (
-        states.split(obs_size, dim=1)[inter],
-        actions.split(1, dim=-1)[inter],
-        rewards.split(1, dim=-1)[inter],
-        next_states.split(obs_size, dim=1)[inter]
+        states.split(obs_size, dim=1)[agent_index],
+        actions.split(1, dim=-1)[agent_index],
+        rewards.split(1, dim=-1)[agent_index],
+        next_states.split(obs_size, dim=1)[agent_index]
     ), dones
 
 class DQN(nn.Module):
@@ -106,28 +98,25 @@ class DQN(nn.Module):
     )
     """
 
-    def __init__(self, obs_size=4, n_actions=2, hidden_size=32, n_inter=1):
+    def __init__(self, obs_size=4, n_actions=2, hidden_size=32):
         """ Defines n_inter independent DQN neutral networks.
-        Args:
+
+            TODO: Find a way to aggregate the tables.
+
+        Parameters:
+        ----------- 
             obs_size: observation/state size of the environment.
+
             n_actions: number of discrete actions available in the environment.
+
             hidden_size: size of hidden layers.
-                n_inter: Number of agents or networks
         """
         super().__init__()
-        # fcs = []
-        # for _ in range(n_inter):
-        # fcs.append(
         self.net = nn.Sequential(
             nn.Linear(obs_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, n_actions)
         )
-        # )
-        # self.net = nn.ModuleList(fcs)
-
-    # def forward(self, i, x):
-    #     return self.net[i](x.float())
 
     def forward(self, x):
         return self.net(x.float())
@@ -149,7 +138,8 @@ class ReplayBuffer:
 
     def __init__(self, capacity):
         """
-        Args:
+        Parameters:
+        ----------- 
             capacity: size of the buffer
         """
         self.buffer = deque(maxlen=capacity)
@@ -160,7 +150,8 @@ class ReplayBuffer:
     def append(self, experience):
         """Add experience to the buffer.
 
-        Args:
+        Parameters:
+        ----------- 
             experience: tuple (state, action, reward, done, new_state)
         """
         self.buffer.append(experience)
@@ -168,7 +159,8 @@ class ReplayBuffer:
     def sample(self, batch_size):
         """Draes a random sample for experience.
 
-        Args:
+        Parameters:
+        ----------- 
             batch_size maximum number of experience
         """
         sample_size = min(len(self.buffer), batch_size) 
@@ -193,7 +185,8 @@ class RLDataset(IterableDataset):
 
     def __init__(self, buffer, sample_size):
         """
-        Args:
+        Parameters:
+        ----------- 
             buffer: replay buffer
             sample_size: number of experiences to sample at a time
         """
@@ -209,17 +202,20 @@ class RLDataset(IterableDataset):
 class Agent:
     """Base Agent class handling the interaction with the environment.
 
-    >>> env = gym.make("CartPole-v1")
+    >>> env = get_environment('arterial')
     >>> buffer = ReplayBuffer(10)
     >>> Agent(env, buffer)  # doctest: +ELLIPSIS
-    <...reinforce_learn_Qnet.Agent object at ...>
+    <...dqn.Agent object at ...>
     """
 
-    def __init__(self, env, replay_buffer):
+    def __init__(self, env, replay_buffer, agents_num=1):
         """
-        Args:
-            env: training environment
-            replay_buffer: replay buffer storing experiences
+        Parameters:
+        -----------
+        * env: environment.EnvironmentGymWrapper
+            Trainning environment
+        * replay_buffer: dqn.ReplayBuffer
+            replay buffer storing experiences
         """
         self.env = env
         self.replay_buffer = replay_buffer
@@ -230,52 +226,60 @@ class Agent:
         # Assumption: All intersections have the same phase.
         self.state = list(flatten(self.env.reset().values()))
 
-    def get_action(self, net, i, epsilon, device):
-        """Using the given network, decide what action to carry out using an epsilon-greedy policy.
+    def act(self, net, epsilon, device):
+        """For a given network, decide what action to carry out
+            using an epsilon-greedy policy.
 
-        Args:
-            net: list<DQN>
-            epsilon: value to determine likelihood of taking a random action
-            device: current device
+        Parameters:
+        ----------- 
+        * epsilon: float
+            Value to determine likelihood of taking a random action
+        * device: current device
 
         Returns:
-            action
+        --------
+        * actions: dict<str, int>
+        contains actions from all agents.
         """
-        if np.random.random() < epsilon:
-            # TODO: Actions are change or keep for all intersections.
-            # action = self.env.action_space.sample()
-            action = np.random.choice((0, 1))
-        else:
-            state = torch.tensor([self.state]).split(4, dim=1)[i]
+        actions = {}
+        for i, tl_id in enumerate(self.env.tl_ids):
+            if np.random.random() < epsilon:
+                # TODO: Actions are change or keep for all intersections.
+                action = np.random.choice((0, 1))
+            else:
+                state = torch.tensor([self.state]).split(4, dim=1)[i]
+                
+                if device not in ["cpu"]:
+                    state = state.cuda(device)
 
-            if device not in ["cpu"]:
-                state = state.cuda(device)
-
-            # TODO: ModuleList
-            # q_values = net(i, state)
-            q_values = net[i](state)
-            _, action = torch.max(q_values, dim=1)
-            action = int(action.item())
-
-        return action
+                q_values = net[i](state)
+                _, action = torch.max(q_values, dim=1)
+                action = int(action.item()) 
+            actions[tl_id] = action
+        return actions
 
     @torch.no_grad()
     def play_step(self, net, epsilon=0.0, device="cpu"):
-        """Carries out a single interaction step between the agent and the environment.
+        """Carries out a single interaction step between the agent
+        and the environment.
 
-        Args:
-            net: DQN network
-            epsilon: value to determine likelihood of taking a random action
-            device: current device
+        Parameters:
+        ----------- 
+        * net: list<dqn.DQN>
+        Deep Q-network one per agent.
+        * epsilon: float
+        Value to determine likelihood of taking a random action
+        * device: str
+        Current device: 'cpu' or 'tpu'
 
         Returns:
-            reward, done
+        --------
+        * reward: list<float>
+        reward for each agent. 
+        * done: bool
+        if the episode is over
         """
-
-        # TODO: get_action should handle iteration.
-        actions = {}
-        for i, tl_id in enumerate(self.env.tl_ids):
-            actions[tl_id] = self.get_action(net, i, epsilon, device)
+        actions = self.act(net, epsilon, device)
 
         # do step in the environment
         new_state, reward, done, _ = self.env.step(actions)
@@ -294,6 +298,8 @@ class Agent:
 class DQNLightning(pl.LightningModule):
     """Basic DQN Model.
 
+    TODO: Use save ModelCheckpoint from LightningModule.
+
     >>> DQNLightning(env="intersection")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
     DQNLightning(
       (net): DQN(
@@ -306,7 +312,7 @@ class DQNLightning(pl.LightningModule):
     """
 
     def __init__(self, network='intersection', replay_size=200, warm_start_steps=0,
-        gamma=0.99, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
+        gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
         sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
         **kwargs,
     ):
@@ -323,10 +329,6 @@ class DQNLightning(pl.LightningModule):
         self.episode_timesteps = episode_timesteps
         self.batch_size = batch_size
 
-        # Instanciate environment.
-        # TODO: read from environment
-        # obs_size = self.env.observation_space.shape[0]
-        # n_actions = self.env.action_space.n
         self.env = get_environment(network, episode_timesteps=episode_timesteps)
         self.obs_size = 4
         self.hidden_size = 32
@@ -345,12 +347,6 @@ class DQNLightning(pl.LightningModule):
         ) for _ in range(self.num_intersections)]
 
 
-        # self.target_net = DQN(
-        #     self.obs_size,
-        #     self.num_actions,
-        #     self.hidden_size,
-        #     self.num_intersections
-        # )
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
         self.total_reward = 0
@@ -367,53 +363,54 @@ class DQNLightning(pl.LightningModule):
     def total_timestep(self):
         return self._total_timestep + self.timestep
 
-    def populate(self, steps=1000):
-        """Carries out several random steps through the environment to initially fill up the replay buffer with
-        experiences.
+    def populate(self, net, steps=1000):
+        """Carries out several random steps through the
+           environment to initially fill up the replay buffer with
+           experiences.
 
-        Args:
-            steps: number of random steps to populate the buffer with
+        Parameters:
+        ----------- 
+        * steps: number of random steps to populate the buffer with
         """
         for i in range(steps):
-            self.agent.play_step(self.net, epsilon=1.0)
+            self.agent.play_step(net, epsilon=1.0)
 
     def forward(self, i, x):
-        """Passes in a state `x` through the network and gets the `q_values` of each action as an output.
+        """Passes in a state `x` through the network and gets the
+           `q_values` of each action as an output.
 
-        Args:
-            x: environment state
+        Parameters:
+        ----------- 
+        * x: environment state
 
         Returns:
-            q values
+        --------
+        * q-values
         """
         output = self.net[i](x)
         return output
 
-    # def dqn_mse_loss(self, batch):
-    def dqn_mse_loss(self, batch, inter):
+    def dqn_mse_loss(self, batch, agent_index):
         """Calculates the mse loss using a mini batch from the replay buffer.
 
-        Args:
-            batch: current mini batch of replay data
+        Parameters:
+        -----------  
+        * batch: torch.tensor([B, N * obs_size])
+        Current mini batch of replay data
 
         Returns:
-            loss
+        --------
+        * loss: torch.tensor([B, N * obs_size]) 
         """
         # split and iterate over sections! -- beware assumption
-        # states, actions, rewards, dones, next_states = batch
-        # ni = 0
-        batch_data, dones = zip2sections(batch, self.obs_size, inter)
-        net = self.net[inter]
-        target_net = self.target_net[inter]
+        # gets experience from the agent
+        batch_data, dones = get_experience(batch, self.obs_size, agent_index)
+        net = self.net[agent_index]
+        target_net = self.target_net[agent_index]
         s_, a_, r_, s1_ = batch_data
-        # for s_, a_, r_, s1_ in gen:
-            # TODO: ModuleList
-            # state_action_values = self.net(ni, s_).gather(1, a_).squeeze(-1)
-        state_action_values = self.net[inter](s_).gather(1, a_).squeeze(-1)
+        state_action_values = self.net[agent_index](s_).gather(1, a_).squeeze(-1)
 
         with torch.no_grad():
-            # TODO: ModuleList
-            # next_state_values = self.target_net(ni, s1_).max(1)[0]
             next_state_values = target_net(s1_).max(1)[0]
             next_state_values[dones] = 0.0
             next_state_values = next_state_values.detach()
@@ -421,20 +418,18 @@ class DQNLightning(pl.LightningModule):
         expected_state_action_values = next_state_values * self.gamma + r_.squeeze(-1)
 
         return nn.MSELoss()(state_action_values, expected_state_action_values)
-        # loss[ni] = nn.MSELoss()(state_action_values, expected_state_action_values)
-        # # ni += 1
-        # return loss
 
     def training_step(self, batch, nb_batch):
-        """Carries out a single step through the environment to update the replay buffer. Then calculates loss
-        based on the minibatch received.
+        """Carries out a single step through the environment to update
+           the replay buffer. Then calculates loss based on the minibatch
+           received.
 
-        Args:
-            batch: current mini batch of replay data
-            nb_batch: batch number
-
-        Returns:
-            Training loss and log metrics
+        Parameters:
+        ----------- 
+        * batch:
+        Current mini batch of replay data
+        * nb_batch:
+        Batch number
         """
         device = self.get_device(batch)
         epsilon = max(self.epsilon_final,
@@ -448,8 +443,7 @@ class DQNLightning(pl.LightningModule):
         # calculates training loss
         optimizers = self.optimizers(use_pl_optimizer=True)
 
-        # MAS -- sum_{n, N} Q_n(s_n, u_n), for n=1,...,|N|
-        # loss = torch.sum(loss)
+        # MAS -- Q_n(s_n, u_n), for n=1,...,|N|
         # N Independent Learners
         for i, opt in enumerate(optimizers):
 
@@ -462,6 +456,8 @@ class DQNLightning(pl.LightningModule):
             self.total_reward = self.episode_reward
             self.episode_reward = 0
             self._total_timestep += self.episode_timesteps
+            # TODO: Manually save checkpoints from DQNS.
+
             print('') # Skip an output line
 
         # Soft update of target network
@@ -489,7 +485,6 @@ class DQNLightning(pl.LightningModule):
             self.log(k, v, logger=True, prog_bar=False)
         for k, v in status_bar.items():
             self.log(k, v, logger=False, prog_bar=True)
-        return loss
 
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
