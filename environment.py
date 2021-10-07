@@ -131,7 +131,7 @@ class Environment(object):
         for tl_id, internal  in self._active_phases.items():
             active_phase, active_time = internal
 
-            active_time += self.step_size if self.timestep > 0 else 0 
+            active_time += self.step_size if self.timestep > 0 else 0
             self._active_phases[tl_id] = (active_phase, active_time)
         return self._active_phases
 
@@ -147,13 +147,15 @@ class Environment(object):
         self._reset()
         for eps in tqdm(range(num_steps)):
             if self.is_decision_step:
-                actions = yield self.observations
+                obs = self.observations
+            if self.timestep % 10 == 0:
+                actions = yield obs
             else:
                 yield
             self.step(actions)
         return 0
-        
-    
+
+
     def step(self, actions={}):
         # Handle controller actions
         # KEEP or SWITCH phase
@@ -162,7 +164,7 @@ class Environment(object):
         if self.is_decision_step: self._phase_ctl(actions)
         self.engine.next_step()
 
-    """Performs phase control""" 
+    """Performs phase control"""
     def _phase_ctl(self, actions):
         for tl_id, active_phases in self._active_phases.items():
             phases = self.phases[tl_id]
@@ -173,13 +175,13 @@ class Environment(object):
                 # transitions to green
                 phase_ctrl = current_phase * 2
 
-            elif (current_time > self.yellow + self.min_green and current_action == 1) or \
+            elif (current_time >= self.yellow + self.min_green and current_action == 1) or \
                     (current_time == self.max_green):
                 # transitions to yellow
                 phase_ctrl = (current_phase * 2 + 1) % (2 * len(phases))
 
                 # adjust log
-                next_phase = (current_phase + 1) % len(phases) 
+                next_phase = (current_phase + 1) % len(phases)
                 self._active_phases[tl_id] = (next_phase, 0)
 
             if phase_ctrl is not None:
