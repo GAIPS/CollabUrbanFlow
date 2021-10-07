@@ -42,10 +42,9 @@ def print_arguments(args):
     print('Arguments (analysis/test_plots.py):')
     print('\tExperiment root folder: {0}\n'.format(args.experiment_root_folder))
 
-def get_lanes_lengths(train_args):
+def get_lanes_lengths(network):
 
     # TODO: get_roadnet
-    network = train_args['network']
     roadnet_file_path = Path('data/networks') / network / 'roadnet.json' 
     with roadnet_file_path.open() as f: roadnet = json.load(f)
 
@@ -55,7 +54,28 @@ def get_lanes_lengths(train_args):
     }
     return lanes_lengths
 
-def main(experiment_root_folder=None):
+def get_config(experiment_root_folder, config_filename):
+    # There are two types of experiments
+    # 1) Reinforcement learning --> train.config
+    # 2) Baseline --> baseline.config
+
+    # test training
+    config_path = list(Path(experiment_root_folder).rglob(config_filename))[0]
+    config = configparser.ConfigParser()
+    config.read(config_path)
+
+    if 'train' in config_filename:
+        agent_type = config['agent_type']['agent_type']
+        demand_type = config['train_args']['demand_type']
+        network = config['train_args']['network']
+    if 'baseline' in config_filename:
+        agent_type = config['baseline_args']['ts_type']
+        demand_type = config['baseline_args']['demand_type']
+        network = config['baseline_args']['network']
+
+    return agent_type, demand_type, network 
+
+def main(experiment_root_folder=None, config_filename='train.config'):
 
     print('\nRUNNING analysis/test_plots.py\n')
 
@@ -76,22 +96,19 @@ def main(experiment_root_folder=None):
     log_files = [p for p in Path(experiment_root_folder).rglob('emission_log.json')]
     print('Number of csv files found: {0}'.format(len(log_files)))
 
-    # Get agent_type and demand_type.
-    train_config_path = list(Path(experiment_root_folder).rglob('train.config'))[0]
-    train_config = configparser.ConfigParser()
-    train_config.read(train_config_path)
-
-    agent_type = train_config['agent_type']['agent_type']
-    demand_type = train_config['train_args']['demand_type']
+    # Get agent_type, demand_type, network.
+    agent_type, demand_type, network = get_config(
+        experiment_root_folder,
+        config_filename
+    )
     
-
     vehicles_appended = []
     throughputs = []
     global_throughputs = []
 
     mean_values_per_eval = []
 
-    lanes_lengths = get_lanes_lengths(train_config['train_args'])
+    lanes_lengths = get_lanes_lengths(network)
     df_lengths = pd.DataFrame.from_dict({'length': lanes_lengths})
 
     
