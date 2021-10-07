@@ -198,7 +198,7 @@ def baseline_batch(baseline=None):
             pool = NonDaemonicPool(num_processors, maxtasksperchild=1)
             gen = enumerate(baseline_cfg_paths)
             baseline_args = [
-                (_i + 1, _p) for _i, _p in gen
+                (_i, _p) for _i, _p in gen
             ]
             rvs = pool.map(delay_baseline, baseline_args)
             pool.close()

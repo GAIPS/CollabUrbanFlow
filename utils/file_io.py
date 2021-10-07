@@ -65,9 +65,11 @@ def engine_create(network_or_path, seed=0, thread_num=4):
     eng.set_random_seed(seed)
     return eng
 
-def expr_path_create(network):
+def expr_path_create(network, seed=""):
     timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
-    expr_path =  Path(f'data/emissions/{network}_{timestamp}')
+    base_path = f'data/emissions/{network}_{timestamp}'
+    if seed: base_path += f'-{seed}'
+    expr_path =  Path(base_path)
     Path.mkdir(expr_path, exist_ok=True)
     print(f'Experiment: {str(expr_path)}\n')
     return expr_path

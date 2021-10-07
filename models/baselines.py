@@ -69,7 +69,7 @@ def main(baseline_config_path=None):
     np.random.seed(seed)
     eng.set_random_seed(seed)
 
-    target_path = expr_path_create(network)
+    target_path = expr_path_create(network, seed)
     expr_config_dump(network, target_path, config, flows,
                      roadnet, dump_train_config=False)
     # Move temporary to target
