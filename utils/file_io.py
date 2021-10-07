@@ -84,14 +84,16 @@ def expr_path_test_target(orig_path):
     target_path.mkdir(exist_ok=True)
     return target_path
 
-def expr_config_dump(network, expr_path, config, flow, roadnet):
+def expr_config_dump(network, expr_path,
+                     config, flow, roadnet, dump_train_config=True):
     config['dir'] = f'{expr_path.as_posix()}/'
     
     save_dir_path = Path(expr_path) / 'config'
     save_dir_path.mkdir(exist_ok=True)
     # if not save_dir_path.exists():
     #     save_dir_path.mkdir()
-    copyfile('config/train.config', save_dir_path / 'train.config')
+    if dump_train_config:
+        copyfile('config/train.config', save_dir_path / 'train.config')
 
     with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
     with (save_dir_path / 'flow.json').open('w') as f: json.dump(flow, f)

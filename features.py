@@ -7,6 +7,7 @@
 from math import exp
 
 def _delay(x): return exp(-5 * x)
+def _volume(vehs, edges): return sum([vehs[edge] for edge in edges])
 
 def compute_delay(phases, vehicles, velocities, speed_limits):
     """ Computes delay feature
@@ -71,14 +72,18 @@ def compute_pressure(incoming_roadlinks, outgoing_roadlinks, vehicles):
         intersection_code --> pressure (num_phases len)
     """
     features = {}
-    gn0 = zip(incoming_roadlinks, outgoing_roadlinks)
-    for incoming, outgoing in gn0:
-        assert incoming[0] == outgoing[0]
-        tl_id = incoming[0]
-        gn1 = zip(incoming, outgoing)
-        pressure = [
-            (sum(len(vehicles[edge]) for edge in inco[-1]) - \
-                sum(len(vehicles[edge] for edge in outg[-1])))
-            for inco, outg in gn1]
-        features[tl_id] = tuple(pressure)
+    assert incoming_roadlinks.keys() == outgoing_roadlinks.keys()
+    gn0 = zip(incoming_roadlinks.keys(),
+              incoming_roadlinks.values(),
+              outgoing_roadlinks.values())
+
+    vehicle_counts = {k: len(v) for k, v in vehicles.items()}
+    def vn(x): return _volume(vehicle_counts, x)
+
+    for ts_id, incoming, outgoing in gn0:
+        assert incoming.keys() == outgoing.keys()
+        gn1 = zip(incoming.values(), outgoing.values())
+        features[ts_id] = tuple([
+            vn(inco) - vn(outg) for inco, outg in gn1
+        ])
     return features
