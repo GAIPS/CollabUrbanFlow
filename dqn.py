@@ -37,6 +37,7 @@ Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 import argparse
 from collections import deque, namedtuple, OrderedDict
 from collections import Iterable
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -314,7 +315,7 @@ class DQNLightning(pl.LightningModule):
     def __init__(self, network='intersection', replay_size=200, warm_start_steps=0,
         gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
         sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
-        **kwargs,
+        save_path=None,**kwargs,
     ):
         super().__init__(**kwargs)
         self.automatic_optimization = False
@@ -353,6 +354,8 @@ class DQNLightning(pl.LightningModule):
         self.episode_reward = 0
         self._total_timestep = 0
         if self.warm_start_steps > 0 : self.populate(self.warm_start_steps)
+        self.save_path = save_path
+
 
 
     @property
@@ -456,8 +459,8 @@ class DQNLightning(pl.LightningModule):
             self.total_reward = self.episode_reward
             self.episode_reward = 0
             self._total_timestep += self.episode_timesteps
-            # TODO: Manually save checkpoints from DQNS.
-
+            if self.save_path is not None:
+                self.save_checkpoint(self.save_path, self.total_timestep)
             print('') # Skip an output line
 
         # Soft update of target network
@@ -485,7 +488,7 @@ class DQNLightning(pl.LightningModule):
             self.log(k, v, logger=True, prog_bar=False)
         for k, v in status_bar.items():
             self.log(k, v, logger=False, prog_bar=True)
-
+        
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
         optimizers = [optim.Adam(self.net[i].parameters(), lr=self.lr) for i in range(self.num_intersections)]
@@ -508,11 +511,11 @@ class DQNLightning(pl.LightningModule):
     """ Serialization """
     # Serializes the object's copy -- sets get_wave to null.
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
-        class_name = type(self).__name__.lower()
-        file_path = Path(chkpt_dir_path) / chkpt_num / f'{class_name}.chkpt'
-        file_path.parent.mkdir(exist_ok=True)
-        with open(file_path, mode='wb') as f:
-            dill.dump(self, f)
+
+        for i, tl_id in enumerate(self.env.tl_ids):
+            file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'{tl_id}.chkpt'
+            file_path.parent.mkdir(exist_ok=True)
+            torch.save(self.net[i].state_dict(), file_path)
 
     # deserializes object -- except for get_wave.
     @classmethod
@@ -537,6 +540,8 @@ class DQNLightning(pl.LightningModule):
         parser.add_argument("--epsilon_init", type=float, default=1.0, help="starting value of epsilon")
         parser.add_argument("--epsilon_final", type=float, default=0.01, help="final value of epsilon")
         parser.add_argument("--episode_timesteps", type=int, default=3600, help="max length of an episode")
+
+        parser.add_argument("--save_path", type=str, default=None, help="Directory to save experiments.")
         return parent_parser
 
 def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
@@ -547,35 +552,32 @@ def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
     args.network = train_args['network']
     experiment_time = train_args['experiment_time']
     args.episode_timesteps = train_args['experiment_save_agent_interval']
-    num_epochs = experiment_time // 10
+    # num_epochs = experiment_time // 10
+    num_steps = train_args['experiment_time']
 
     # Epsilon 
     args.epsilon_init = train_args['epsilon_init']
     args.epsilon_final = train_args['epsilon_final']
     args.epsilon_timesteps = train_args['epsilon_schedule_timesteps']
 
-    expr_path = expr_path_create(args.network)
-
+    if args.save_path is None:
+        expr_path = expr_path_create(args.network)
+        args.save_path = expr_path / 'checkpoints'
+        Path(args.save_path).mkdir(exist_ok=True)
+    
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     model = DQNLightning(**vars(args))
 
-    # saves a file like: my/path/sample-mnist-epoch=02-val_loss=0.32.ckpt
-    # checkpoint_callback = ModelCheckpoint(
-    #     monitor="checkpoint",
-    #     dirpath=expr_path,
-    #     filename=f"sample-{args.network}",
-    #     save_top_k=3,
-    #     mode="min",
-    # )
-
-    # How does number of epoches can be defined by 
-    # input parameters.
-    # num_epochs =  9000
+    # FIXME: RLDataLoader apperantly has an irregular
+    # number of epochs.
+    # * 2456 are the first 5 episodes 
+    # * 197 epochs for each episode thereafter
+    # num_epochs = 2456 + 197 * 75
+    num_epochs = 2456 
     trainer = pl.Trainer(
             max_epochs=num_epochs,
-            # checkpoint_callbacks=[checkpoint_callback],
             log_every_n_steps=500,
             val_check_interval=100)
     trainer.fit(model)
