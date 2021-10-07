@@ -78,14 +78,23 @@ def flatten(items, ignore_types=(str, bytes)):
             yield from flatten(x)
         else:
             yield x
+# TODO: ModuleList
+# def zip2sections(batch, obs_size):
+#     states, actions, rewards, dones, next_states = batch
+#     return zip(
+#         states.split(obs_size, dim=1),
+#         actions.split(1, dim=-1),
+#         rewards.split(1, dim=-1),
+#         next_states.split(obs_size, dim=1)
+#     ), dones
 
-def zip2sections(batch, obs_size):
+def zip2sections(batch, obs_size, inter):
     states, actions, rewards, dones, next_states = batch
-    return zip(
-        states.split(obs_size, dim=1),
-        actions.split(1, dim=-1),
-        rewards.split(1, dim=-1),
-        next_states.split(obs_size, dim=1)
+    return (
+        states.split(obs_size, dim=1)[inter],
+        actions.split(1, dim=-1)[inter],
+        rewards.split(1, dim=-1)[inter],
+        next_states.split(obs_size, dim=1)[inter]
     ), dones
 
 class DQN(nn.Module):
@@ -106,19 +115,22 @@ class DQN(nn.Module):
                 n_inter: Number of agents or networks
         """
         super().__init__()
-        fcs = []
-        for _ in range(n_inter):
-            fcs.append(
-                nn.Sequential(
-                    nn.Linear(obs_size, hidden_size),
-                    nn.ReLU(),
-                    nn.Linear(hidden_size, n_actions)
-                )
-            )
-        self.net = nn.ModuleList(fcs)
+        # fcs = []
+        # for _ in range(n_inter):
+        # fcs.append(
+        self.net = nn.Sequential(
+            nn.Linear(obs_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, n_actions)
+        )
+        # )
+        # self.net = nn.ModuleList(fcs)
 
-    def forward(self, i, x):
-        return self.net[i](x.float())
+    # def forward(self, i, x):
+    #     return self.net[i](x.float())
+
+    def forward(self, x):
+        return self.net(x.float())
 
 
 # Named tuple for storing experience steps gathered in training
@@ -239,7 +251,9 @@ class Agent:
             if device not in ["cpu"]:
                 state = state.cuda(device)
 
-            q_values = net(i, state)
+            # TODO: ModuleList
+            # q_values = net(i, state)
+            q_values = net[i](state)
             _, action = torch.max(q_values, dim=1)
             action = int(action.item())
 
@@ -258,6 +272,7 @@ class Agent:
             reward, done
         """
 
+        # TODO: get_action should handle iteration.
         actions = {}
         for i, tl_id in enumerate(self.env.tl_ids):
             actions[tl_id] = self.get_action(net, i, epsilon, device)
@@ -296,6 +311,7 @@ class DQNLightning(pl.LightningModule):
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.automatic_optimization = False
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
@@ -317,18 +333,24 @@ class DQNLightning(pl.LightningModule):
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
 
-        self.net = DQN(
+        self.net = [DQN(
             self.obs_size,
             self.num_actions,
-            self.hidden_size,
-            self.num_intersections
-        )
-        self.target_net = DQN(
+            self.hidden_size
+        ) for _ in range(self.num_intersections)]
+        self.target_net = [DQN(
             self.obs_size,
             self.num_actions,
-            self.hidden_size,
-            self.num_intersections
-        )
+            self.hidden_size
+        ) for _ in range(self.num_intersections)]
+
+
+        # self.target_net = DQN(
+        #     self.obs_size,
+        #     self.num_actions,
+        #     self.hidden_size,
+        #     self.num_intersections
+        # )
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
         self.total_reward = 0
@@ -367,7 +389,8 @@ class DQNLightning(pl.LightningModule):
         output = self.net[i](x)
         return output
 
-    def dqn_mse_loss(self, batch):
+    # def dqn_mse_loss(self, batch):
+    def dqn_mse_loss(self, batch, inter):
         """Calculates the mse loss using a mini batch from the replay buffer.
 
         Args:
@@ -378,22 +401,29 @@ class DQNLightning(pl.LightningModule):
         """
         # split and iterate over sections! -- beware assumption
         # states, actions, rewards, dones, next_states = batch
-        ni = 0
-        gen, dones = zip2sections(batch, self.obs_size)
-        loss = torch.zeros(self.num_intersections)
-        for s_, a_, r_, s1_ in gen:
-            state_action_values = self.net(ni, s_).gather(1, a_).squeeze(-1)
+        # ni = 0
+        batch_data, dones = zip2sections(batch, self.obs_size, inter)
+        net = self.net[inter]
+        target_net = self.target_net[inter]
+        s_, a_, r_, s1_ = batch_data
+        # for s_, a_, r_, s1_ in gen:
+            # TODO: ModuleList
+            # state_action_values = self.net(ni, s_).gather(1, a_).squeeze(-1)
+        state_action_values = self.net[inter](s_).gather(1, a_).squeeze(-1)
 
-            with torch.no_grad():
-                next_state_values = self.target_net(ni, s1_).max(1)[0]
-                next_state_values[dones] = 0.0
-                next_state_values = next_state_values.detach()
+        with torch.no_grad():
+            # TODO: ModuleList
+            # next_state_values = self.target_net(ni, s1_).max(1)[0]
+            next_state_values = target_net(s1_).max(1)[0]
+            next_state_values[dones] = 0.0
+            next_state_values = next_state_values.detach()
 
-            expected_state_action_values = next_state_values * self.gamma + r_.squeeze(-1)
+        expected_state_action_values = next_state_values * self.gamma + r_.squeeze(-1)
 
-            loss[ni] = nn.MSELoss()(state_action_values, expected_state_action_values)
-            ni += 1
-        return loss
+        return nn.MSELoss()(state_action_values, expected_state_action_values)
+        # loss[ni] = nn.MSELoss()(state_action_values, expected_state_action_values)
+        # # ni += 1
+        # return loss
 
     def training_step(self, batch, nb_batch):
         """Carries out a single step through the environment to update the replay buffer. Then calculates loss
@@ -416,13 +446,18 @@ class DQNLightning(pl.LightningModule):
         self.episode_reward += sum(reward) * 0.001
 
         # calculates training loss
-        loss = self.dqn_mse_loss(batch)
+        optimizers = self.optimizers(use_pl_optimizer=True)
 
-        # MAS -- (1/ A) * sum_{a, A} Q_a(s_a, a_a)
-        # IL "puro" a = 1.. A  Q_a(s_a, a_a)
-        # automatic_optimizer = False
-        loss = torch.mean(loss)
+        # MAS -- sum_{n, N} Q_n(s_n, u_n), for n=1,...,|N|
+        # loss = torch.sum(loss)
+        # N Independent Learners
+        for i, opt in enumerate(optimizers):
 
+            loss = self.dqn_mse_loss(batch, i)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        
         if done:
             self.total_reward = self.episode_reward
             self.episode_reward = 0
@@ -431,13 +466,15 @@ class DQNLightning(pl.LightningModule):
 
         # Soft update of target network
         if self.timestep % self.sync_rate == 0:
-            self.target_net.load_state_dict(self.net.state_dict())
+            # TODO: ModuleList
+            # self.target_net.load_state_dict(self.net.state_dict())
+            for i in range(self.num_intersections):
+                self.target_net[i].load_state_dict(self.net[i].state_dict())
 
         log = {
             "steps": torch.tensor(self.timestep).to(device),
             "total_reward": torch.tensor(self.total_reward).to(device),
             "reward": torch.mean(torch.tensor(reward).clone().detach()).to(device),
-
 
             "exploration_rate": torch.tensor(np.round(epsilon, 4)).to(device),
             "train_loss": loss.clone().detach().to(device)
@@ -456,8 +493,8 @@ class DQNLightning(pl.LightningModule):
 
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
-        optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
-        return [optimizer]
+        optimizers = [optim.Adam(self.net[i].parameters(), lr=self.lr) for i in range(self.num_intersections)]
+        return optimizers
 
     def __dataloader(self):
         """Initialize the Replay Buffer dataset used for retrieving experiences."""
