@@ -35,10 +35,13 @@ Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
 
 import argparse
-from collections import deque, namedtuple, OrderedDict
-from collections import Iterable
+from collections import deque, namedtuple, OrderedDict 
+from collections.abc import Iterable
 from pathlib import Path
 
+
+
+from tqdm.auto import trange
 import numpy as np
 import torch
 import torch.nn as nn
@@ -53,11 +56,17 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from environment import get_environment
 from utils.file_io import parse_train_config, \
-                expr_logs_dump, expr_path_create
+                expr_logs_dump, expr_path_create, \
+                expr_path_test_target
+from plots.train_plots import main as train_plots
+from plots.test_plots import main as test_plots
+from jobs.rollouts import concat
 
 TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
 
+
+def simple_hash(x): return hash(x) % (11 * 255)
 
 def flatten(items, ignore_types=(str, bytes)):
     """
@@ -89,6 +98,26 @@ def get_experience(batch, obs_size, agent_index):
         rewards.split(1, dim=-1)[agent_index],
         next_states.split(obs_size, dim=1)[agent_index]
     ), dones
+
+
+def update_emissions(eng, emissions):
+    """Builds sumo like emission file"""
+    for veh_id in eng.get_vehicles(include_waiting=False):
+        data = eng.get_vehicle_info(veh_id)
+
+        emission_dict = {
+            'time': eng.get_current_time(),
+            'id': veh_id,
+            'lane': data['drivable'],
+            'pos': float(data['distance']),
+            'route': simple_hash(data['route']),
+            'speed': float(data['speed']),
+            'type': 'human',
+            'x': 0,
+            'y': 0
+        }
+        emissions.append(emission_dict)
+
 
 class DQN(nn.Module):
     """Simple DQN network used for function approximation.
@@ -209,7 +238,7 @@ class Agent:
     <...dqn.Agent object at ...>
     """
 
-    def __init__(self, env, replay_buffer, agents_num=1):
+    def __init__(self, env, replay_buffer=None):
         """
         Parameters:
         -----------
@@ -286,9 +315,10 @@ class Agent:
         new_state, reward, done, _ = self.env.step(actions)
         new_state, reward, actions = \
                 list(flatten(new_state.values())), list(reward.values()), list(actions.values())
-        exp = Experience(self.state, actions, reward, done, new_state)
+        if epsilon > 0.0:
+            exp = Experience(self.state, actions, reward, done, new_state)
 
-        self.replay_buffer.append(exp)
+            self.replay_buffer.append(exp)
 
         self.state = new_state
         if done:
@@ -582,9 +612,62 @@ def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
             val_check_interval=100)
     trainer.fit(model)
     # TODO: Move this routine to env or create a delegate chain.
-    expr_logs_dump(expr_path, 'train_log.json', model.agent.env.info_dict)
+    expr_logs_dump(args.save_path, 'train_log.json', model.agent.env.info_dict)
 
+    # 2) Create train plots.
+    load_path = Path('data/emissions/arterial_20211007235041/checkpoints/')
+    train_plots(load_path.parent)
 
+    # Load checkpoint for testing
+    rollout_timesteps = 21600
+    loaded_nets = []
+    chkpt_num = max(int(folder.name) for folder in load_path.iterdir())
+    chkpt_path = load_path / str(chkpt_num)
+    env = get_environment('arterial', episode_timesteps=rollout_timesteps)
+
+    # self.net = [DQN(
+    #     self.obs_size,
+    #     self.num_actions,
+    #     self.hidden_size
+    # ) for _ in range(self.num_intersections)]
+    net = []
+    for tl_id in env.tl_ids:
+        dqn = DQN()
+        dqn.load_state_dict(torch.load(chkpt_path / f'{tl_id}.chkpt'))
+        net.append(dqn)
+    
+    num_rollouts = 2
+    rollout_timesteps = args.episode_timesteps
+    rollout_list = []
+    for num_rollout in trange(num_rollouts, position=0):
+        agent = Agent(env)
+        target_path = expr_path_test_target(load_path.parent, network=args.network)
+
+        # TODO: Get device
+        # TODO: Move emissions to a separate module.
+        # TODO: Refactor emissions -- separate Log?
+        emissions = []
+        for timestep in trange(rollout_timesteps, position=1):
+            agent.play_step(net, epsilon=0.0)
+            update_emissions(env.engine, emissions)
+        info_dict = agent.env.info_dict
+        info_dict['id'] = chkpt_num 
+        rollout_list.append(info_dict)
+
+        expr_logs_dump(target_path, 'emission_log.json', emissions)
+
+        env = get_environment('arterial', episode_timesteps=rollout_timesteps)
+    # expr_logs_dump(args.save_path, 'train_log.json', model.agent.env.info_dict)
+
+    res = concat(rollout_list)
+    filename = f'rollouts_test.json'
+    target_path = batch_path / filename
+    with target_path.open('w') as fj:
+        json.dump(res, fj)
+
+    test_plots(load_path)
+    import ipdb; ipdb.set_trace()
+    
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(add_help=False)

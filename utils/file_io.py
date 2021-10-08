@@ -72,9 +72,10 @@ def expr_path_create(network):
     print(f'Experiment: {str(expr_path)}\n')
     return expr_path
 
-def expr_path_test_target(orig_path):
-    args = parse_train_config(Path(orig_path) / 'config' / 'train.config', args_list=['network'])
-    network = args['network']
+def expr_path_test_target(orig_path, network=None):
+    if network is None:
+        args = parse_train_config(Path(orig_path) / 'config' / 'train.config', args_list=['network'])
+        network = args['network']
 
     target_path = Path(orig_path) / 'eval'
     target_path.mkdir(exist_ok=True)
