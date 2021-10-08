@@ -16,9 +16,8 @@ import configparser
 import numpy as np
 from cityflow import Engine
 # TODO: Build a factory
-from models.train import TRAIN_CONFIG_PATH
 from agents import load_agent
-from environment import Environment, rollback_loop
+from environment import Environment, rollback_loop, rollback_torch
 from approximators.tile_coding import TileCodingApproximator
 from utils.file_io import engine_create, engine_load_config, \
     expr_path_test_target, parse_test_config, parse_train_config
@@ -26,7 +25,7 @@ from utils.file_io import engine_create, engine_load_config, \
 # prevent randomization
 PYTHONHASHSEED=-1
 
-
+TRAIN_CONFIG_PATH = 'config/train.config'
 
 def main(test_config_path=None):
     # Setup config parser path.
@@ -58,10 +57,13 @@ def main(test_config_path=None):
 
     train_args = parse_train_config(TRAIN_CONFIG_PATH)
     agent_type = train_args['agent_type']
-    agent = load_agent(agent_type, chkpt_dir_path, chkpt_num)
-    agent.stop()
+    agent = load_agent(agent_type, chkpt_dir_path, chkpt_num, rollout_time, train_args["network"])
 
-    info_dict = rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num)
+    if agent_type == "IL":
+        info_dict = rollback_torch(agent[0], agent[1], target_path, rollout_time)
+    else:
+        agent.stop()
+        info_dict = rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num)
     # emissions = []
     # 
     # gen = env.loop(rollout_time)
@@ -83,7 +85,7 @@ def main(test_config_path=None):
     #     result = e.value
     # expr_logs_dump(target_path, 'emission_log.json', emissions)
     
-    # env.info_dict['id'] = chkpt_num
+    info_dict['id'] = chkpt_num
     return info_dict
 
 if __name__ == '__main__':

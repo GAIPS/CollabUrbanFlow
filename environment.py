@@ -19,16 +19,17 @@ from tqdm.auto import trange
 from features import compute_delay, compute_pressure
 from utils.network import get_phases
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump
+from models.DQN_Lightning import Agent
 
 FEATURE_CHOICE = ('delay', 'pressure')
 
 def simple_hash(x): return hash(x) % (11 * 255)
 
 def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
-    eng = engine_create(network, seed=seed, thread_num=4)
+    eng = engine_create(network, seed=seed, thread_num=thread_num)
     config, flows, roadnet = engine_load_config(network) 
 
-    return  Environment(roadnet, eng, episode_timesteps=episode_timesteps)
+    return Environment(roadnet, eng, episode_timesteps=episode_timesteps)
 
 def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
     # 1) Seed everything
@@ -71,6 +72,13 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
             agent.reset()
     return env.info_dict
 
+
+def train_torch(agent):
+    agent.trainer.fit(agent.model)
+
+    return agent.model.agent.env.info_dict
+
+
 # TODO: Move emissions to environment
 def rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num):
     emissions = []
@@ -92,8 +100,22 @@ def rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num):
         result = e.value
     expr_logs_dump(target_path, 'emission_log.json', emissions)
     
-    env.info_dict['id'] = chkpt_num
     return env.info_dict
+
+def rollback_torch(env , nets, target_path, rollout_time):
+
+    agent = Agent(env)
+    # TODO: Get device
+    # TODO: Move emissions to a separate module.
+    # TODO: Refactor emissions -- separate Log?
+    emissions = []
+    for timestep in trange(rollout_time, position=1):
+        agent.play_step(nets, epsilon=0.0)
+        update_emissions(env.engine, emissions)
+
+    expr_logs_dump(target_path, 'emission_log.json', emissions)
+
+    return agent.env.info_dict
 
 class Environment(object):
     def __init__(self,
@@ -110,7 +132,7 @@ class Environment(object):
             Params:
             -------
             intersection: dict
-                An non virtual intersection from roadnet.json file.
+                An non virtual intersection from roadnet.json file.agent.model
 
             engine: cityflow.Engine object
                 The microsimulator engine

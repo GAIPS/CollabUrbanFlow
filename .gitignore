@@ -116,3 +116,6 @@ venv.bak/
 
 # Google drive
 drive/
+
+# Torch Lightning log folder
+lightning_logs/

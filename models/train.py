@@ -18,7 +18,7 @@ sys.path.append(Path.cwd().as_posix())
 
 
 import numpy as np
-from environment import Environment, train_loop
+from environment import Environment, train_loop, train_torch
 from agents import get_agent
 
 from approximators.tile_coding import TileCodingApproximator
@@ -55,14 +55,17 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     np.random.seed(seed)
     expr_path = expr_path_create(network)
     chkpt_dir = Path(f"{expr_path}/checkpoints/")
-
+    chkpt_dir.mkdir(exist_ok=True)
 
     expr_config_dump(network, expr_path, config, flows, roadnet)
     approx = TileCodingApproximator(roadnet, flows)
     agent = get_agent(agent_type, env, epsilon_init, epsilon_final,
-                      epsilon_timesteps, network)
+                      epsilon_timesteps, network, episode_time,experiment_time, chkpt_dir, seed)
 
-    info_dict = train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir)
+    if agent_type == 'IL':
+        info_dict = train_torch(agent)
+    else:
+        info_dict = train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir)
 
     # Store train info dict.
     expr_logs_dump(expr_path, 'train_log.json', info_dict)
