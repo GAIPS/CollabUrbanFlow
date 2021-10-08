@@ -63,6 +63,7 @@ class Environment(object):
         if feature not in FEATURE_CHOICE:
             raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
         self.feature = feature
+        self.info_dict = defaultdict(list)
 
         if engine is not None: self.engine = engine
 
@@ -129,6 +130,7 @@ class Environment(object):
         for tl_id in self.tl_ids:
             self.engine.set_tl_phase(tl_id, 0)
         self.engine.reset()
+        return self.observations
 
     @property
     def observations(self):
@@ -139,6 +141,10 @@ class Environment(object):
         active_phases = self._update_active_phases()
         features = self._update_features()
         return {_id: active_phases[_id] + features[_id] for _id in self.tl_ids}
+
+    @property
+    def reward(self):
+        return {_id: -float(sum(_obs[2:])) for _id, _obs in self.observations.items()}
 
     # TODO: include switch
     def _update_active_phases(self):
@@ -161,9 +167,9 @@ class Environment(object):
         self.reset()
         for eps in tqdm(range(num_steps)):
             if self.is_observation_step:
-                obs = self.observations
+                observations = self.observations
             if self.is_update_step:
-                actions = yield obs
+                actions = yield observations
             else:
                 yield
             self.step(actions)
@@ -174,11 +180,12 @@ class Environment(object):
         # KEEP or SWITCH phase
         # Maps agent action to controller action
         # G -> Y -> G -> Y
-        if self.is_observation_step: self._phase_ctl(actions)
+        if self.is_update_step and self.timestep > 5: self.log(actions)
+        if self.is_observation_step:
+            self._phase_ctl(actions)
         self.engine.next_step()
 
     """Performs phase control"""
-
     def _phase_ctl(self, actions):
         for tl_id, active_phases in self._active_phases.items():
             phases = self.phases[tl_id]
@@ -201,46 +208,46 @@ class Environment(object):
             if phase_ctrl is not None:
                 self.engine.set_tl_phase(tl_id, phase_ctrl)
 
+    def log(self, actions):
+
+        sum_speeds = sum(([float(vel) for vel in self.speeds.values()]))
+        num_vehicles = len(self.speeds)
+        self.info_dict["rewards"].append(self.reward)
+        self.info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
+        self.info_dict["vehicles"].append(num_vehicles)
+        self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
+        self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
+        self.info_dict["states"].append(self.observations)
+
 class EnvironmentGymWrapper(Environment):
     ''' Makes it behave like a gym environment'''
 
     def __init__(self, *args, **kwargs):
         super(EnvironmentGymWrapper, self).__init__(*args, **kwargs)
 
-        self.decision_step = 5 
+        self.decision_step = 10
         if 'episode_timesteps' not in kwargs:
             raise ValueError('episode timesteps must be provided')
         else:
             self.episode_timesteps = kwargs['episode_timesteps']
-        self.info_dict = defaultdict(list)
 
     def step(self, actions):
         for _ in range(self.decision_step):
+            if self.is_observation_step: self.observations
             super(EnvironmentGymWrapper, self).step(actions)
 
-        new_state = self.observations
-        reward = {
-            tl_id: float(np.round(-sum(observ[2:]), 4))
-            for tl_id, observ in  new_state.items() 
-        }
+        # new_state = self.observations
+        # reward = {
+        #     tl_id: float(np.round(-sum(observ[2:]), 4))
+        #     for tl_id, observ in  new_state.items() 
+        # }
 
         done = self.timestep >= self.episode_timesteps
-        self.log(actions)
-        return new_state, reward, done, None
+        # self.log(actions)
+        return self.observations, self.reward, done, None
 
-    def reset(self):
-        super(EnvironmentGymWrapper, self).reset()
-        # Case its a single intersection: simplify outputs
-        return self.observations
+    # def reset(self):
+    #     super(EnvironmentGymWrapper, self).reset()
+    #     # Case its a single intersection: simplify outputs
+    #     return self.observations
 
-    def log(self, actions):
-        r_next = {_id: -float(sum(_obs[2:])) for _id, _obs in self.observations.items()}
-
-        sum_speeds = sum(([float(vel) for vel in self.speeds.values()]))
-        num_vehicles = len(self.speeds)
-        self.info_dict["rewards"].append(r_next)
-        self.info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-        self.info_dict["vehicles"].append(num_vehicles)
-        self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
-        self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
-        self.info_dict["states"].append(self.observations)

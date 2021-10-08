@@ -142,7 +142,6 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
     # 1) Seed everything
     num_episodes = int(experiment_time / episode_time)
 
-    info_dict = defaultdict(lambda : [])
     s_prev = None
     a_prev = None
 
@@ -154,10 +153,6 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
                 observations = next(gen)
                 if observations is not None:
                     state = approx.approximate(observations)
-
-                    # Rounded delay state
-                    # state = {tid: (*obs[:2], round(obs[2]), round(obs[3])) for tid, obs in observations.items()}
-
                     actions = agent.act(state)
 
                     if s_prev is None and a_prev is None:
@@ -165,18 +160,9 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
                         a_prev = actions
 
                     else:
-                        r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
-                        agent.update(s_prev, a_prev, r_next, state)
+                        reward = env.reward
+                        agent.update(s_prev, a_prev, reward, state)
                         
-                        sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
-                        num_vehicles = len(env.speeds)
-                        info_dict["rewards"].append(r_next)
-                        info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-                        info_dict["vehicles"].append(num_vehicles)
-                        info_dict["observation_spaces"].append(observations) # No function approximation.
-                        info_dict["actions"].append(actions)
-                        info_dict["states"].append(state)
-
                     s_prev = state
                     a_prev = actions
                     gen.send(actions)
@@ -192,7 +178,7 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
             s_prev = None
             a_prev = None
             agent.reset()
-    return info_dict
+    return env.info_dict
 
 def train_torch(env, engine, agent):
     # 1) Seed everything

@@ -6,7 +6,6 @@
     * Generators
         http://www.dabeaz.com/finalgenerator/FinalGenerator.pdf
 """
-from collections import defaultdict
 import json
 
 from datetime import datetime
@@ -57,12 +56,6 @@ def update_emissions(eng, emissions):
 def simple_hash(x):
     return hash(x) % (11 * 255)
 
-def make_list():
-    return []
-
-def make_info_dict():
-    return defaultdict(make_list)
-
 def main(test_config_path=None):
     # Setup config parser path.
     args = parse_test_config(test_config_path)
@@ -96,10 +89,6 @@ def main(test_config_path=None):
     ctrl = get_controller(agent_type, chkpt_dir_path, chkpt_num)
     ctrl.stop()
 
-    s_prev = None
-    a_prev = None
-
-    info_dict = make_info_dict()
     emissions = []
     
     gen = env.loop(rollout_time)
@@ -111,22 +100,6 @@ def main(test_config_path=None):
                 state = approx.approximate(observations)
                 actions = ctrl.act(state)
 
-                if s_prev is None and a_prev is None:
-                    s_prev = state
-                    a_prev = actions
-
-                else:
-                    r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
-
-                    sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
-                    num_vehicles = len(env.speeds)
-                    info_dict["rewards"].append(r_next)
-                    info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-                    info_dict["vehicles"].append(num_vehicles)
-                    info_dict["observation_spaces"].append(observations) # No function approximation.
-                    info_dict["actions"].append(actions)
-                    info_dict["states"].append(state)
-
                 s_prev = state
                 a_prev = actions
                 gen.send(actions)
@@ -136,8 +109,8 @@ def main(test_config_path=None):
         result = e.value
     expr_logs_dump(target_path, 'emission_log.json', emissions)
     
-    info_dict['id'] = chkpt_num
-    return info_dict
+    env.info_dict['id'] = chkpt_num
+    return env.info_dict
 
 if __name__ == '__main__':
     main(run_path='train.config')
