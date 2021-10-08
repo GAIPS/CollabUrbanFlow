@@ -10,22 +10,90 @@
 '''
 from functools import lru_cache
 from collections import defaultdict
+import os
 
 import numpy as np
 from tqdm import tqdm
-
+from tqdm.auto import trange
 
 from features import compute_delay, compute_pressure
 from utils.network import get_phases
-from utils.file_io import engine_create, engine_load_config
+from utils.file_io import engine_create, engine_load_config, expr_logs_dump
 
 FEATURE_CHOICE = ('delay', 'pressure')
+
+def simple_hash(x): return hash(x) % (11 * 255)
 
 def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
     eng = engine_create(network, seed=seed, thread_num=4)
     config, flows, roadnet = engine_load_config(network) 
 
     return  Environment(roadnet, eng, episode_timesteps=episode_timesteps)
+
+def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
+    # 1) Seed everything
+    num_episodes = int(experiment_time / episode_time)
+
+    s_prev = None
+    a_prev = None
+
+    for eps in trange(num_episodes, position=0):
+        gen = env.loop(episode_time)
+
+        try:
+            while True:
+                experience = next(gen)
+                if experience is not None:
+                    observations, reward = experience[:2]
+                    state = approx.approximate(observations)
+                    actions = agent.act(state)
+
+                    if s_prev is None and a_prev is None:
+                        s_prev = state
+                        a_prev = actions
+
+                    else:
+                        agent.update(s_prev, a_prev, reward, state)
+                        
+                    s_prev = state
+                    a_prev = actions
+                    gen.send(actions)
+
+        except StopIteration as e:
+            result = e.value
+
+            chkpt_num = str(eps * episode_time)
+            os.makedirs(chkpt_dir, exist_ok=True)
+            agent.save_checkpoint(chkpt_dir, chkpt_num)
+
+            s_prev = None
+            a_prev = None
+            agent.reset()
+    return env.info_dict
+
+# TODO: Move emissions to environment
+def rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num):
+    emissions = []
+    
+    gen = env.loop(rollout_time)
+
+    try:
+        while True:
+            experience = next(gen)
+            if experience is not None:
+                observations = experience[0]
+                state = approx.approximate(observations)
+                actions = agent.act(state)
+
+                gen.send(actions)
+            update_emissions(env.engine, emissions)
+
+    except StopIteration as e:
+        result = e.value
+    expr_logs_dump(target_path, 'emission_log.json', emissions)
+    
+    env.info_dict['id'] = chkpt_num
+    return env.info_dict
 
 class Environment(object):
     def __init__(self,
@@ -236,3 +304,23 @@ class Environment(object):
         self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
         self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
         self.info_dict["states"].append(self.observations)
+
+
+def update_emissions(eng, emissions):
+    """Builds sumo like emission file"""
+    for veh_id in eng.get_vehicles(include_waiting=False):
+        data = eng.get_vehicle_info(veh_id)
+
+        emission_dict = {
+            'time': eng.get_current_time(),
+            'id': veh_id,
+            'lane': data['drivable'],
+            'pos': float(data['distance']),
+            'route': simple_hash(data['route']),
+            'speed': float(data['speed']),
+            'type': 'human',
+            'x': 0,
+            'y': 0
+        }
+        emissions.append(emission_dict)
+
