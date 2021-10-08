@@ -65,9 +65,11 @@ def engine_create(network_or_path, seed=0, thread_num=4):
     eng.set_random_seed(seed)
     return eng
 
-def expr_path_create(network):
+def expr_path_create(network, seed=""):
     timestamp = f'{datetime.now():%Y%m%d%H%M%S}'
-    expr_path =  Path(f'data/emissions/{network}_{timestamp}')
+    base_path = f'data/emissions/{network}_{timestamp}'
+    if seed: base_path += f'-{seed}'
+    expr_path =  Path(base_path)
     Path.mkdir(expr_path, exist_ok=True)
     print(f'Experiment: {str(expr_path)}\n')
     return expr_path
@@ -85,14 +87,16 @@ def expr_path_test_target(orig_path, network=None):
     target_path.mkdir(exist_ok=True)
     return target_path
 
-def expr_config_dump(network, expr_path, config, flow, roadnet):
+def expr_config_dump(network, expr_path,
+                     config, flow, roadnet, dump_train_config=True):
     config['dir'] = f'{expr_path.as_posix()}/'
     
     save_dir_path = Path(expr_path) / 'config'
     save_dir_path.mkdir(exist_ok=True)
     # if not save_dir_path.exists():
     #     save_dir_path.mkdir()
-    copyfile('config/train.config', save_dir_path / 'train.config')
+    if dump_train_config:
+        copyfile('config/train.config', save_dir_path / 'train.config')
 
     with (save_dir_path / 'config.json').open('w') as f: json.dump(config, f)
     with (save_dir_path / 'flow.json').open('w') as f: json.dump(flow, f)
@@ -123,7 +127,7 @@ def parse_train_config(train_config_path,
     ret['network'] = train_args['network']
     ret['experiment_time']= int(train_args['experiment_time'])
     ret['experiment_save_agent_interval']= int(train_args['experiment_save_agent_interval'])
-
+    ret['agent_type'] = train_config["agent_type"]["agent_type"]
     # Epsilon 
     ret['epsilon_init'] = float(train_args['epsilon_init'])
     ret['epsilon_final'] = float(train_args['epsilon_final'])

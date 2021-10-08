@@ -1,10 +1,11 @@
-'''Environment: Wrapper around engine and feature (delay) producer.
+'''Environment: Wrapper around engine and feature producer.
 
     * Converts microsimulator data into features.
     * Keeps the agent's view from the traffic light.
     * Converts agent's actions into control actions.
     * Observes traffic data and transforms into features.
     * Logs past observations
+    * Produces features: Delay and pressure.
 
 '''
 from functools import lru_cache
@@ -13,10 +14,12 @@ from collections import defaultdict
 import numpy as np
 from tqdm import tqdm
 
+
+from features import compute_delay, compute_pressure
+from utils.network import get_phases
 from utils.file_io import engine_create, engine_load_config
 
-def g_list(): return []
-def g_dict(): return defaultdict(g_list)
+FEATURE_CHOICE = ('delay', 'pressure')
 
 def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
     eng = engine_create(network, seed=seed, thread_num=4)
@@ -25,7 +28,15 @@ def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
     return  EnvironmentGymWrapper(roadnet, eng, episode_timesteps=episode_timesteps)
 
 class Environment(object):
-    def __init__(self,  roadnet, engine=None, yellow=5, min_green=5, max_green=90, step_size=5, **kwargs):
+    def __init__(self,
+                 roadnet,
+                 engine=None,
+                 yellow=5,
+                 min_green=5,
+                 max_green=90,
+                 step_size=5,
+                 feature='delay',
+                 **kwargs):
         '''Environment constructor method.
             Params:
             -------
@@ -43,38 +54,16 @@ class Environment(object):
         self.min_green = min_green
         self.max_green = max_green
         self.step_size = step_size
-        self.tl_ids = []
-        self.phases = {}
-        self.max_speeds = {}
 
-        roads = roadnet['roads']
-        intersections = [intr for intr in roadnet['intersections'] if not intr['virtual']]
-        for intersection in intersections:
-            lightphases = intersection['trafficLight']['lightphases']
-            phases_per_edges = {}
-            edges_max_speeds = {}
-            p = 0
-            for linkids in lightphases:
-                if any(linkids['availableRoadLinks']):
-                    linkids = linkids['availableRoadLinks']
-                    edges = []
-                    for linkid in linkids:
-                        # startRoad should be the incoming links.
-                        edgeid = intersection['roadLinks'][linkid]['startRoad']
-                        lanes = [lane for road in roads if road['id'] == edgeid
-                            for lane in road['lanes']]
-                        num_lanes = len(lanes)
+        _inc, _out, _lmt = get_phases(roadnet)
+        self._incoming_roadlinks = _inc
+        self._outgoing_roadlinks = _out
+        self._speed_limit = _lmt
 
-                        for lid in range(num_lanes):
-                            _edgeid = f'{edgeid}_{lid}'
-                            if _edgeid not in edges:
-                                edges.append(_edgeid)
-                                edges_max_speeds[_edgeid] = lanes[lid]['maxSpeed']
-                    phases_per_edges[p] = edges
-                    p += 1
-            self.phases[intersection['id']] = phases_per_edges 
-            self.max_speeds[intersection['id']] = edges_max_speeds
-            self.tl_ids.append(intersection['id']) 
+        if feature not in FEATURE_CHOICE:
+            raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
+        self.feature = feature
+
         if engine is not None: self.engine = engine
 
     @property
@@ -86,14 +75,39 @@ class Environment(object):
         self._engine = engine
 
     @property
-    def is_decision_step(self):
+    def is_observation_step(self):
         return self.timestep % self.step_size == 0
 
     @property
-    def timestep(self):
-        return int(self.engine.get_current_time()) 
+    def is_update_step(self):
+        return self.timestep % 10 == 0
 
-    """ Dynamic properties are cached""" 
+    @property
+    def timestep(self):
+        return int(self.engine.get_current_time())
+
+    @property
+    def tl_ids(self):
+        return sorted(self.phases.keys())
+
+    @property
+    def phases(self):
+        return self._incoming_roadlinks
+
+    @property
+    def incoming_roadlinks(self):
+        return self._incoming_roadlinks
+
+    @property
+    def outgoing_roadlinks(self):
+        return self._outgoing_roadlinks
+
+    @property
+    def max_speeds(self):
+        return self._speed_limit
+
+    """ Dynamic properties are cached"""
+
     @property
     def vehicles(self):
         return self._get_lane_vehicles(self.timestep)
@@ -128,55 +142,43 @@ class Environment(object):
 
     # TODO: include switch
     def _update_active_phases(self):
-        for tl_id, internal  in self._active_phases.items():
+        for tl_id, internal in self._active_phases.items():
             active_phase, active_time = internal
 
-            active_time += self.step_size if self.timestep > 0 else 0 
+            active_time += self.step_size if self.timestep > 0 else 0
             self._active_phases[tl_id] = (active_phase, active_time)
         return self._active_phases
 
     def _update_features(self):
-        observations = {}
-
-        ids = self.vehicles
-        vels = self.speeds
-
-        for tl_id, phases  in self.phases.items():
-            delays = []
-            max_speeds = self.max_speeds[tl_id]
-                
-            for phs, edges in phases.items():
-                phase_delays = []
-                for edge in edges:
-                    max_speed = max_speeds[edge]
-                    edge_vels = [vels[idv] for idv in ids[edge]]
-                    phase_delays += [delay(vel / max_speed) for vel in edge_vels]
-                delays.append(float(round(sum(phase_delays), 4)))
-            observations[tl_id] = tuple(delays)
-        return observations
-
+        if self.feature == 'delay':
+            return compute_delay(self.phases, self.vehicles,
+                                 self.speeds, self.max_speeds)
+        return compute_pressure(self.incoming_roadlinks,
+                                self.outgoing_roadlinks, self.vehicles)
 
     def loop(self, num_steps):
         # Before
         self.reset()
         for eps in tqdm(range(num_steps)):
-            if self.is_decision_step:
-                actions = yield self.observations
+            if self.is_observation_step:
+                obs = self.observations
+            if self.is_update_step:
+                actions = yield obs
             else:
                 yield
             self.step(actions)
         return 0
-        
-    
+
     def step(self, actions={}):
         # Handle controller actions
         # KEEP or SWITCH phase
         # Maps agent action to controller action
         # G -> Y -> G -> Y
-        if self.is_decision_step: self._phase_ctl(actions)
+        if self.is_observation_step: self._phase_ctl(actions)
         self.engine.next_step()
 
-    """Performs phase control""" 
+    """Performs phase control"""
+
     def _phase_ctl(self, actions):
         for tl_id, active_phases in self._active_phases.items():
             phases = self.phases[tl_id]
@@ -187,13 +189,13 @@ class Environment(object):
                 # transitions to green
                 phase_ctrl = current_phase * 2
 
-            elif (current_time > self.yellow + self.min_green and current_action == 1) or \
+            elif (current_time >= self.yellow + self.min_green and current_action == 1) or \
                     (current_time == self.max_green):
                 # transitions to yellow
                 phase_ctrl = (current_phase * 2 + 1) % (2 * len(phases))
 
                 # adjust log
-                next_phase = (current_phase + 1) % len(phases) 
+                next_phase = (current_phase + 1) % len(phases)
                 self._active_phases[tl_id] = (next_phase, 0)
 
             if phase_ctrl is not None:
@@ -210,7 +212,7 @@ class EnvironmentGymWrapper(Environment):
             raise ValueError('episode timesteps must be provided')
         else:
             self.episode_timesteps = kwargs['episode_timesteps']
-        self.info_dict = g_dict()
+        self.info_dict = defaultdict(list)
 
     def step(self, actions):
         for _ in range(self.decision_step):
@@ -242,8 +244,3 @@ class EnvironmentGymWrapper(Environment):
         self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
         self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
         self.info_dict["states"].append(self.observations)
-
-""" features computation """
-# TODO: Compute features from data seperately
-def delay(x):
-    return np.exp(-5 * x)

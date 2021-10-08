@@ -1,0 +1,8 @@
+{
+  "gneJ0": ["gneJ1", "gneJ4"],
+  "gneJ1": ["gneJ0", "gneJ5"],
+  "gneJ4": ["gneJ0", "gneJ5", "gneJ8"],
+  "gneJ5": ["gneJ1", "gneJ4", "gneJ9"],
+  "gneJ8": ["gneJ4", "gneJ9"],
+  "gneJ9": ["gneJ5", "gneJ8"]
+}
