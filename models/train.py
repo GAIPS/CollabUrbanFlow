@@ -80,58 +80,6 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
                       epsilon_timesteps, network)
 
     info_dict = train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir)
-    # info_dict = defaultdict(lambda : [])
-    # s_prev = None
-    # a_prev = None
-
-    # num_episodes = int(experiment_time / episode_time)
-    # for eps in trange(num_episodes, position=0):
-    #     gen = env.loop(episode_time)
-
-    #     try:
-    #         while True:
-    #             observations = next(gen)
-    #             if observations is not None:
-    #                 state = approx.approximate(observations)
-
-    #                 # Rounded delay state
-    #                 # state = {tid: (*obs[:2], round(obs[2]), round(obs[3])) for tid, obs in observations.items()}
-
-    #                 actions = ctrl.act(state)
-
-    #                 if s_prev is None and a_prev is None:
-    #                     s_prev = state
-    #                     a_prev = actions
-
-    #                 else:
-    #                     r_next = {_id: -sum(_obs[2:]) for _id, _obs in observations.items()}
-    #                     ctrl.update(s_prev, a_prev, r_next, state)
-    #                     
-    #                     sum_speeds = sum(([float(vel) for vel in env.speeds.values()]))
-    #                     num_vehicles = len(env.speeds)
-    #                     info_dict["rewards"].append(r_next)
-    #                     info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
-    #                     info_dict["vehicles"].append(num_vehicles)
-    #                     info_dict["observation_spaces"].append(observations) # No function approximation.
-    #                     info_dict["actions"].append(actions)
-    #                     info_dict["states"].append(state)
-
-    #                 s_prev = state
-    #                 a_prev = actions
-    #                 gen.send(actions)
-
-    #     except StopIteration as e:
-    #         result = e.value
-
-    #         chkpt_dir = Path(f"{expr_path}/checkpoints/")
-    #         chkpt_num = str(eps * episode_time)
-    #         os.makedirs(chkpt_dir, exist_ok=True)
-    #         ctrl.save_checkpoint(chkpt_dir, chkpt_num)
-
-    #         s_prev = None
-    #         a_prev = None
-    #         ctrl.reset()
-
 
     # Store train info dict.
     expr_logs_dump(expr_path, 'train_log.json', info_dict)
@@ -150,8 +98,9 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
 
         try:
             while True:
-                observations = next(gen)
-                if observations is not None:
+                experience = next(gen)
+                if experience is not None:
+                    observations, reward = experience[:2]
                     state = approx.approximate(observations)
                     actions = agent.act(state)
 
@@ -160,7 +109,6 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
                         a_prev = actions
 
                     else:
-                        reward = env.reward
                         agent.update(s_prev, a_prev, reward, state)
                         
                     s_prev = state
@@ -170,7 +118,6 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
         except StopIteration as e:
             result = e.value
 
-            # chkpt_dir = Path(f"{expr_path}/checkpoints/")
             chkpt_num = str(eps * episode_time)
             os.makedirs(chkpt_dir, exist_ok=True)
             agent.save_checkpoint(chkpt_dir, chkpt_num)

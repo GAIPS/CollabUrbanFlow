@@ -25,7 +25,7 @@ def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
     eng = engine_create(network, seed=seed, thread_num=4)
     config, flows, roadnet = engine_load_config(network) 
 
-    return  EnvironmentGymWrapper(roadnet, eng, episode_timesteps=episode_timesteps)
+    return  Environment(roadnet, eng, episode_timesteps=episode_timesteps)
 
 class Environment(object):
     def __init__(self,
@@ -36,6 +36,7 @@ class Environment(object):
                  max_green=90,
                  step_size=5,
                  feature='delay',
+                 episode_timesteps=-1,
                  **kwargs):
         '''Environment constructor method.
             Params:
@@ -50,20 +51,27 @@ class Environment(object):
             --------
             Converter object
         '''
+        # Signal plans regulation
         self.yellow = yellow
         self.min_green = min_green
         self.max_green = max_green
         self.step_size = step_size
 
+        # Roadnet
         _inc, _out, _lmt = get_phases(roadnet)
         self._incoming_roadlinks = _inc
         self._outgoing_roadlinks = _out
         self._speed_limit = _lmt
 
+        # Loop control
+        self._episode_timestep = episode_timesteps
+    
+
         if feature not in FEATURE_CHOICE:
             raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
         self.feature = feature
         self.info_dict = defaultdict(list)
+
 
         if engine is not None: self.engine = engine
 
@@ -86,6 +94,12 @@ class Environment(object):
     @property
     def timestep(self):
         return int(self.engine.get_current_time())
+
+    @property
+    def done(self):
+        if (self._episode_timestep == -1): return False
+        return self.timestep >= self._episode_timestep
+
 
     @property
     def tl_ids(self):
@@ -165,14 +179,15 @@ class Environment(object):
     def loop(self, num_steps):
         # Before
         self.reset()
+        experience = self.observations, self.reward, self.done, None
         for eps in tqdm(range(num_steps)):
-            if self.is_observation_step:
-                observations = self.observations
+            # if self.is_observation_step:
+            #     observations = self.observations
             if self.is_update_step:
-                actions = yield observations
+                actions = yield experience
             else:
                 yield
-            self.step(actions)
+            experience = self.step(actions)
         return 0
 
     def step(self, actions={}):
@@ -184,6 +199,9 @@ class Environment(object):
         if self.is_observation_step:
             self._phase_ctl(actions)
         self.engine.next_step()
+        if self.is_observation_step:
+            return self.observations, self.reward, self.done, None
+        return None
 
     """Performs phase control"""
     def _phase_ctl(self, actions):
@@ -218,36 +236,3 @@ class Environment(object):
         self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
         self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
         self.info_dict["states"].append(self.observations)
-
-class EnvironmentGymWrapper(Environment):
-    ''' Makes it behave like a gym environment'''
-
-    def __init__(self, *args, **kwargs):
-        super(EnvironmentGymWrapper, self).__init__(*args, **kwargs)
-
-        self.decision_step = 10
-        if 'episode_timesteps' not in kwargs:
-            raise ValueError('episode timesteps must be provided')
-        else:
-            self.episode_timesteps = kwargs['episode_timesteps']
-
-    def step(self, actions):
-        for _ in range(self.decision_step):
-            if self.is_observation_step: self.observations
-            super(EnvironmentGymWrapper, self).step(actions)
-
-        # new_state = self.observations
-        # reward = {
-        #     tl_id: float(np.round(-sum(observ[2:]), 4))
-        #     for tl_id, observ in  new_state.items() 
-        # }
-
-        done = self.timestep >= self.episode_timesteps
-        # self.log(actions)
-        return self.observations, self.reward, done, None
-
-    # def reset(self):
-    #     super(EnvironmentGymWrapper, self).reset()
-    #     # Case its a single intersection: simplify outputs
-    #     return self.observations
-

@@ -95,8 +95,9 @@ def main(test_config_path=None):
 
     try:
         while True:
-            observations = next(gen)
-            if observations is not None:
+            experience = next(gen)
+            if experience is not None:
+                observations = experience[0]
                 state = approx.approximate(observations)
                 actions = ctrl.act(state)
 

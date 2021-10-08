@@ -1,16 +1,3 @@
-# Copyright The PyTorch Lightning team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Deep Reinforcement Learning for Multi-agent system.
 
 * Deep Q-networks
@@ -33,12 +20,10 @@ References:
 [1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
 Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
-
 import argparse
 from collections import deque, namedtuple, OrderedDict 
 from collections.abc import Iterable
 from pathlib import Path
-
 
 
 from tqdm.auto import trange
@@ -311,8 +296,10 @@ class Agent:
         """
         actions = self.act(net, epsilon, device)
 
-        # do step in the environment
-        new_state, reward, done, _ = self.env.step(actions)
+        # do step in the environment -- 10s
+        for _ in range(10):
+            experience = self.env.step(actions)
+        new_state, reward, done, _ = experience
         new_state, reward, actions = \
                 list(flatten(new_state.values())), list(reward.values()), list(actions.values())
         if epsilon > 0.0:
@@ -625,11 +612,6 @@ def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
     chkpt_path = load_path / str(chkpt_num)
     env = get_environment('arterial', episode_timesteps=rollout_timesteps)
 
-    # self.net = [DQN(
-    #     self.obs_size,
-    #     self.num_actions,
-    #     self.hidden_size
-    # ) for _ in range(self.num_intersections)]
     net = []
     for tl_id in env.tl_ids:
         dqn = DQN()
@@ -666,7 +648,6 @@ def main(args, train_config_path=TRAIN_CONFIG_PATH, seed=0):
         json.dump(res, fj)
 
     test_plots(load_path)
-    import ipdb; ipdb.set_trace()
     
 if __name__ == "__main__":
 
