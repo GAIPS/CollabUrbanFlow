@@ -41,7 +41,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     agent_type = train_args['agent_type']
 
     experiment_time = int(train_args['experiment_time'])
-    episode_time = int(train_args['experiment_save_agent_interval'])
+    save_agent_interval = int(train_args['experiment_save_agent_interval'])
 
     # Epsilon 
     epsilon_init = train_args['epsilon_init']
@@ -57,15 +57,16 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     chkpt_dir = Path(f"{expr_path}/checkpoints/")
     chkpt_dir.mkdir(exist_ok=True)
 
+
     expr_config_dump(network, expr_path, config, flows, roadnet)
     approx = TileCodingApproximator(roadnet, flows)
     agent = get_agent(agent_type, env, epsilon_init, epsilon_final,
-                      epsilon_timesteps, network, episode_time,experiment_time, chkpt_dir, seed)
+                      epsilon_timesteps, network, save_agent_interval,experiment_time, chkpt_dir, seed)
 
     if agent_type == 'IL':
         info_dict = train_torch(agent)
     else:
-        info_dict = train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir)
+        info_dict = train_loop(env, agent, approx, experiment_time, save_agent_interval, chkpt_dir)
 
     # Store train info dict.
     expr_logs_dump(expr_path, 'train_log.json', info_dict)

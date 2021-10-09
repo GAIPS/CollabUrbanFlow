@@ -83,25 +83,6 @@ def get_experience(batch, obs_size, agent_index):
            ), dones
 
 
-def update_emissions(eng, emissions):
-    """Builds sumo like emission file"""
-    for veh_id in eng.get_vehicles(include_waiting=False):
-        data = eng.get_vehicle_info(veh_id)
-
-        emission_dict = {
-            'time': eng.get_current_time(),
-            'id': veh_id,
-            'lane': data['drivable'],
-            'pos': float(data['distance']),
-            'route': simple_hash(data['route']),
-            'speed': float(data['speed']),
-            'type': 'human',
-            'x': 0,
-            'y': 0
-        }
-        emissions.append(emission_dict)
-
-
 class DQN(nn.Module):
     """Simple DQN network used for function approximation.
 
@@ -297,6 +278,8 @@ class Agent:
         # do step in the environment -- 10s
         for _ in range(10):
             experience = self.env.step(actions)
+            if epsilon == 0:
+                self.env.update_emissions(self.env.engine, self.env.emissions)
         new_state, reward, done, _ = experience
         new_state, reward, actions = \
             list(flatten(new_state.values())), list(reward.values()), list(actions.values())

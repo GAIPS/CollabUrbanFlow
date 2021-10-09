@@ -94,7 +94,7 @@ def rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num):
                 actions = agent.act(state)
 
                 gen.send(actions)
-            update_emissions(env.engine, emissions)
+            Environment.update_emissions(env.engine, emissions)
 
     except StopIteration as e:
         result = e.value
@@ -108,12 +108,13 @@ def rollback_torch(env , nets, target_path, rollout_time):
     # TODO: Get device
     # TODO: Move emissions to a separate module.
     # TODO: Refactor emissions -- separate Log?
-    emissions = []
-    for timestep in trange(rollout_time, position=1):
-        agent.play_step(nets, epsilon=0.0)
-        update_emissions(env.engine, emissions)
 
-    expr_logs_dump(target_path, 'emission_log.json', emissions)
+    # play_step runs 10 timesteps at a time, hence rollout_time/10
+    for timestep in trange(rollout_time//10, position=1):
+        agent.play_step(nets, epsilon=0.0)
+
+
+    expr_logs_dump(target_path, 'emission_log.json', env.emissions)
 
     return agent.env.info_dict
 
@@ -155,7 +156,9 @@ class Environment(object):
 
         # Loop control
         self._episode_timestep = episode_timesteps
-    
+
+        #Emission File
+        self.emissions = []
 
         if feature not in FEATURE_CHOICE:
             raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
@@ -327,22 +330,22 @@ class Environment(object):
         self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
         self.info_dict["states"].append(self.observations)
 
+    @staticmethod
+    def update_emissions(eng, emissions):
+        """Builds sumo like emission file"""
+        for veh_id in eng.get_vehicles(include_waiting=False):
+            data = eng.get_vehicle_info(veh_id)
 
-def update_emissions(eng, emissions):
-    """Builds sumo like emission file"""
-    for veh_id in eng.get_vehicles(include_waiting=False):
-        data = eng.get_vehicle_info(veh_id)
-
-        emission_dict = {
-            'time': eng.get_current_time(),
-            'id': veh_id,
-            'lane': data['drivable'],
-            'pos': float(data['distance']),
-            'route': simple_hash(data['route']),
-            'speed': float(data['speed']),
-            'type': 'human',
-            'x': 0,
-            'y': 0
-        }
-        emissions.append(emission_dict)
+            emission_dict = {
+                'time': eng.get_current_time(),
+                'id': veh_id,
+                'lane': data['drivable'],
+                'pos': float(data['distance']),
+                'route': simple_hash(data['route']),
+                'speed': float(data['speed']),
+                'type': 'human',
+                'x': 0,
+                'y': 0
+            }
+            emissions.append(emission_dict)
 

@@ -35,7 +35,7 @@ RUN_CONFIG_PATH = 'config/run.config'
 
 class DQN_MODEL:
 
-    def __init__(self, epsilon_init, epsilon_final, epsilon_timesteps, network, episode_timesteps, experiment_time, save_path, seed):
+    def __init__(self, epsilon_init, epsilon_final, epsilon_timesteps, network, save_agent_interval, experiment_time, save_path, seed):
 
         parser = self.add_model_specific_args()
         args = parser.parse_args()
@@ -43,7 +43,7 @@ class DQN_MODEL:
         args.epsilon_final = epsilon_final
         args.epsilon_timesteps = epsilon_timesteps
         args.network = network
-        args.episode_timesteps = episode_timesteps
+        args.episode_timesteps = save_agent_interval
         args.save_path = save_path
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -56,14 +56,24 @@ class DQN_MODEL:
         # * 197 epochs for each episode thereafter
         # for 80 eps:
         # num_epochs = 2456 + 197 * 75
-
-        self.num_episodes = experiment_time / episode_timesteps
+        self.num_episodes = experiment_time / save_agent_interval
         self.num_epochs = 2456 + 197 * (self.num_episodes-5)
+        # self.trainer = pl.Trainer(
+        #     max_epochs=self.num_epochs,
+        #     log_every_n_steps=500,
+        #     val_check_interval=100)
+
+
+        # 10000 of populate. Since each trainer step runs 10 env timesteps, we need to divide max_steps by 10.
+        assert experiment_time > save_agent_interval
+        max_trainer_steps = (experiment_time-10000)/10
 
         self.trainer = pl.Trainer(
-            max_epochs=self.num_epochs,
+            max_steps=max_trainer_steps,
             log_every_n_steps=500,
             val_check_interval=100)
+
+
 
     @staticmethod
     def load_checkpoint(chkpt_dir_path, rollout_time, network, chkpt_num=None):

@@ -9,7 +9,7 @@ def load_agent(agent_type, chkpt_dir_path, chkpt_num, rollout_time, network):
     raise ValueError(f'{agent_type} not defined.')
 
 def get_agent(agent_type, env, epsilon_init, epsilon_final,
-                   epsilon_timesteps, network, episode_timesteps, experiment_time, chkpt_dir, seed):
+              epsilon_timesteps, network, save_agent_interval, experiment_time, chkpt_dir, seed):
 
     if agent_type == 'ACAT':
         return ACAT(env.phases, epsilon_init,
@@ -19,6 +19,6 @@ def get_agent(agent_type, env, epsilon_init, epsilon_final,
                       epsilon_final, epsilon_timesteps, network)
 
     if agent_type == 'IL':
-        return DQN_MODEL(epsilon_init, epsilon_final, epsilon_timesteps, network, episode_timesteps,experiment_time, chkpt_dir, seed)
+        return DQN_MODEL(epsilon_init, epsilon_final, epsilon_timesteps, network, save_agent_interval, experiment_time, chkpt_dir, seed)
 
     raise ValueError(f'{agent_type} not defined.')
