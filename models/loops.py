@@ -61,8 +61,8 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
 
 # TODO: Move emissions to environment
 def rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num):
-    emissions = []
-    
+    # Makes sure the environment will generate emissions.
+    env.emit = True
     gen = env.loop(rollout_time)
 
     try:
@@ -74,11 +74,8 @@ def rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num):
                 actions = agent.act(state)
 
                 gen.send(actions)
-            # TODO: Move static method for instance.
-            Environment.update_emissions(env.engine, emissions)
-
     except StopIteration as e:
         result = e.value
-    expr_logs_dump(target_path, 'emission_log.json', emissions)
+    expr_logs_dump(target_path, 'emission_log.json', env.emissions)
     
     return env.info_dict

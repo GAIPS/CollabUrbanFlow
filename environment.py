@@ -18,8 +18,7 @@ from tqdm.auto import trange
 
 from features import compute_delay, compute_pressure
 from utils.network import get_phases
-from utils.file_io import engine_create, engine_load_config #, expr_logs_dump
-# from models.DQN_Lightning import Agent
+from utils.file_io import engine_create, engine_load_config
 
 FEATURE_CHOICE = ('delay', 'pressure')
 
@@ -41,6 +40,7 @@ class Environment(object):
                  step_size=5,
                  feature='delay',
                  episode_timesteps=-1,
+                 emit=False,
                  **kwargs):
         '''Environment constructor method.
             Params:
@@ -70,13 +70,14 @@ class Environment(object):
         # Loop control
         self._episode_timestep = episode_timesteps
 
-        #Emission File
-        self.emissions = []
+        # Emissions
+        self._emissions = []
+        self._emit = emit
+        self.info_dict = defaultdict(list)
 
         if feature not in FEATURE_CHOICE:
             raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
         self.feature = feature
-        self.info_dict = defaultdict(list)
 
 
         if engine is not None: self.engine = engine
@@ -106,6 +107,17 @@ class Environment(object):
         if (self._episode_timestep == -1): return False
         return self.timestep >= self._episode_timestep
 
+    @property
+    def emit(self):
+        return self._emit
+
+    @emit.setter
+    def emit(self, emit):
+        self._emit = emit
+        
+    @property
+    def emissions(self):
+        return self._emissions
 
     @property
     def tl_ids(self):
@@ -146,10 +158,12 @@ class Environment(object):
         return self.engine.get_vehicle_speed()
 
     def reset(self):
+        self._emissions = []
         self._active_phases = {tl_id: (0, 0) for tl_id in self.tl_ids}
         for tl_id in self.tl_ids:
             self.engine.set_tl_phase(tl_id, 0)
         self.engine.reset()
+        if self.emit: self._update_emissions()
         return self.observations
 
     @property
@@ -182,13 +196,30 @@ class Environment(object):
         return compute_pressure(self.incoming_roadlinks,
                                 self.outgoing_roadlinks, self.vehicles)
 
+
+    def _update_emissions(self):
+        """Builds sumo like emission file"""
+        if not any(self.emissions) or self.timestep > self.emissions[-1]['time']:
+            for veh_id in self.engine.get_vehicles(include_waiting=False):
+                data = self.engine.get_vehicle_info(veh_id)
+
+                self._emissions.append({
+                    'time': self.timestep,
+                    'id': veh_id,
+                    'lane': data['drivable'],
+                    'pos': float(data['distance']),
+                    'route': simple_hash(data['route']),
+                    'speed': float(data['speed']),
+                    'type': 'human',
+                    'x': 0,
+                    'y': 0
+                })
+
     def loop(self, num_steps):
         # Before
         self.reset()
         experience = self.observations, self.reward, self.done, None
         for eps in tqdm(range(num_steps)):
-            # if self.is_observation_step:
-            #     observations = self.observations
             if self.is_update_step:
                 actions = yield experience
             else:
@@ -205,6 +236,7 @@ class Environment(object):
         if self.is_observation_step:
             self._phase_ctl(actions)
         self.engine.next_step()
+        if self.emit: self._update_emissions()
         if self.is_observation_step:
             return self.observations, self.reward, self.done, None
         return None
@@ -243,22 +275,4 @@ class Environment(object):
         self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
         self.info_dict["states"].append(self.observations)
 
-    @staticmethod
-    def update_emissions(eng, emissions):
-        """Builds sumo like emission file"""
-        for veh_id in eng.get_vehicles(include_waiting=False):
-            data = eng.get_vehicle_info(veh_id)
-
-            emission_dict = {
-                'time': eng.get_current_time(),
-                'id': veh_id,
-                'lane': data['drivable'],
-                'pos': float(data['distance']),
-                'route': simple_hash(data['route']),
-                'speed': float(data['speed']),
-                'type': 'human',
-                'x': 0,
-                'y': 0
-            }
-            emissions.append(emission_dict)
 

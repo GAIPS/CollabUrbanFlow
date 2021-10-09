@@ -11,11 +11,10 @@ def train_loop(agent):
 
 def rollback_loop(env , nets, target_path, rollout_time):
 
+    env.emit = True
     agent = Agent(env)
     # TODO: Get device
     # TODO: Move emissions to a separate module.
-    # TODO: Refactor emissions -- separate Log?
-
     # play_step runs 10 timesteps at a time, hence rollout_time/10
     for timestep in trange(rollout_time//10, position=1):
         agent.play_step(nets, epsilon=0.0)
