@@ -60,7 +60,7 @@ def main(test_config_path=None):
     agent_type = train_args['agent_type']
     agent = load_agent(agent_type, chkpt_dir_path, chkpt_num, rollout_time, train_args["network"])
 
-    rollback_loop = get_loop(agent, train=False)
+    rollback_loop = get_loop(agent_type, train=False)
     if agent_type == "DQN":
         info_dict = rollback_loop(agent[0], agent[1], target_path, rollout_time)
     else:

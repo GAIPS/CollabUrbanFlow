@@ -4,7 +4,6 @@
 
 import models.loops as lp
 import models.lightning_loops as ll
-
 def get_loop(agent_type, train=True):
     # if isinstance(agent, LightningModule):
     # Place here other deep learning.

@@ -26,7 +26,9 @@ import numpy as np
 import torch
 
 from environment import get_environment
-from models.DQN_Lightning import DQNLightning, DQN
+# from models.DQN_Lightning import DQNLightning, DQN
+from agents.DQN_Lightning import DQNLightning
+from approximators.mlp import MLP
 import pytorch_lightning as pl
 
 TRAIN_CONFIG_PATH = 'config/train.config'
@@ -86,7 +88,7 @@ class DQN_MODEL:
 
         nets = []
         for tl_id in env.tl_ids:
-            dqn = DQN()
+            dqn = MLP()
             dqn.load_state_dict(torch.load(chkpt_path / f'{tl_id}.chkpt'))
             nets.append(dqn)
 

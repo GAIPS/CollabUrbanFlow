@@ -158,7 +158,7 @@ class Environment(object):
         return self.engine.get_vehicle_speed()
 
     def reset(self):
-        self._emissions = []
+        # self._emissions = [] 
         self._active_phases = {tl_id: (0, 0) for tl_id in self.tl_ids}
         for tl_id in self.tl_ids:
             self.engine.set_tl_phase(tl_id, 0)

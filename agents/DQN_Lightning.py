@@ -21,7 +21,8 @@ References:
 Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
 import argparse
-from collections import deque, namedtuple, OrderedDict
+# from collections import deque, namedtuple, OrderedDict
+# from collections import OrderedDict
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -32,7 +33,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
-from torch.utils.data.dataset import IterableDataset
+# from torch.utils.data.dataset import IterableDataset
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
@@ -43,6 +44,8 @@ from utils.file_io import parse_train_config, \
 from plots.train_plots import main as train_plots
 from plots.test_plots import main as test_plots
 from utils.utils import concat
+from agents.experience import Experience, ReplayBuffer, RLDataset
+from approximators.mlp import MLP
 
 TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
@@ -82,115 +85,6 @@ def get_experience(batch, obs_size, agent_index):
                next_states.split(obs_size, dim=1)[agent_index]
            ), dones
 
-
-class DQN(nn.Module):
-    """Simple DQN network used for function approximation.
-
-    >>> DQN(10, 5)  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACML
-    DQN(
-      (net): Sequential(...)
-    )
-    """
-
-    def __init__(self, obs_size=4, n_actions=2, hidden_size=32):
-        """ Defines n_inter independent DQN neutral networks.
-
-            TODO: Find a way to aggregate the tables.
-
-        Parameters:
-        -----------
-            obs_size: observation/state size of the environment.
-
-            n_actions: number of discrete actions available in the environment.
-
-            hidden_size: size of hidden layers.
-        """
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(obs_size, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, n_actions)
-        )
-
-    def forward(self, x):
-        return self.net(x.float())
-
-
-# Named tuple for storing experience steps gathered in training
-Experience = namedtuple(
-    "Experience",
-    field_names=["state", "action", "reward", "done", "new_state"]
-)
-
-
-class ReplayBuffer:
-    """Replay Buffer for storing past experiences allowing the agent to learn from them.
-
-    >>> ReplayBuffer(5)  # doctest: +ELLIPSIS
-    <...reinforce_learn_Qnet.ReplayBuffer object at ...>
-    """
-
-    def __init__(self, capacity):
-        """
-        Parameters:
-        -----------
-            capacity: size of the buffer
-        """
-        self.buffer = deque(maxlen=capacity)
-
-    def __len__(self):
-        return len(self.buffer)
-
-    def append(self, experience):
-        """Add experience to the buffer.
-
-        Parameters:
-        -----------
-            experience: tuple (state, action, reward, done, new_state)
-        """
-        self.buffer.append(experience)
-
-    def sample(self, batch_size):
-        """Draes a random sample for experience.
-
-        Parameters:
-        -----------
-            batch_size maximum number of experience
-        """
-        sample_size = min(len(self.buffer), batch_size)
-        indices = np.random.choice(len(self.buffer), sample_size, replace=False)
-        states, actions, rewards, dones, next_states = zip(*(self.buffer[idx] for idx in indices))
-
-        return (
-            np.array(states),
-            np.array(actions),
-            np.array(rewards, dtype=np.float32),
-            np.array(dones, dtype=bool),
-            np.array(next_states),
-        )
-
-
-class RLDataset(IterableDataset):
-    """Iterable Dataset containing the ExperienceBuffer which will be updated with new experiences during training.
-
-    >>> RLDataset(ReplayBuffer(5))  # doctest: +ELLIPSIS
-    <...reinforce_learn_Qnet.RLDataset object at ...>
-    """
-
-    def __init__(self, buffer, sample_size):
-        """
-        Parameters:
-        -----------
-            buffer: replay buffer
-            sample_size: number of experiences to sample at a time
-        """
-        self.buffer = buffer
-        self.sample_size = sample_size
-
-    def __iter__(self):
-        states, actions, rewards, dones, new_states = self.buffer.sample(self.sample_size)
-        for i in range(len(dones)):
-            yield states[i], actions[i], rewards[i], dones[i], new_states[i]
 
 
 class Agent:
@@ -278,8 +172,6 @@ class Agent:
         # do step in the environment -- 10s
         for _ in range(10):
             experience = self.env.step(actions)
-            if epsilon == 0:
-                self.env.update_emissions(self.env.engine, self.env.emissions)
         new_state, reward, done, _ = experience
         new_state, reward, actions = \
             list(flatten(new_state.values())), list(reward.values()), list(actions.values())
@@ -297,14 +189,16 @@ class Agent:
 class DQNLightning(pl.LightningModule):
     """Basic DQN Model.
 
-    TODO: Use save ModelCheckpoint from LightningModule.
+    * Multi-layer Perceptron: for function approximation.
+    * target_net: a dephased copy
+    * ReplayBuffer: for storing experiences.
 
     >>> DQNLightning(env="intersection")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
     DQNLightning(
-      (net): DQN(
+      (net): MLP(
         (net): Sequential(...)
       )
-      (target_net): DQN(
+      (target_net): MLP(
         (net): Sequential(...)
       )
     )
@@ -335,12 +229,12 @@ class DQNLightning(pl.LightningModule):
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
 
-        self.net = [DQN(
+        self.net = [MLP(
             self.obs_size,
             self.num_actions,
             self.hidden_size
         ) for _ in range(self.num_intersections)]
-        self.target_net = [DQN(
+        self.target_net = [MLP(
             self.obs_size,
             self.num_actions,
             self.hidden_size
