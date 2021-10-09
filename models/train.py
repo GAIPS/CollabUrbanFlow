@@ -18,8 +18,9 @@ sys.path.append(Path.cwd().as_posix())
 
 
 import numpy as np
-from environment import Environment, train_loop, train_torch
+from environment import Environment
 from agents import get_agent
+from models import get_loop
 
 from approximators.tile_coding import TileCodingApproximator
 from utils.file_io import engine_create, engine_load_config, \
@@ -32,6 +33,7 @@ RUN_CONFIG_PATH = 'config/run.config'
 
 # Main abstracts the training loop and assigns an
 # agent to its environment
+# TODO: Put logging on a decorator.
 def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     # Setup config parser path.
     print(f'Loading train parameters from: {train_config_path}')
@@ -63,8 +65,9 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     agent = get_agent(agent_type, env, epsilon_init, epsilon_final,
                       epsilon_timesteps, network, save_agent_interval,experiment_time, chkpt_dir, seed)
 
-    if agent_type == 'IL':
-        info_dict = train_torch(agent)
+    train_loop = get_loop(agent_type)
+    if agent_type == 'DQN':
+        info_dict = train_loop(agent)
     else:
         info_dict = train_loop(env, agent, approx, experiment_time, save_agent_interval, chkpt_dir)
 
