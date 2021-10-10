@@ -492,13 +492,12 @@ class DQN_MODEL:
 
 
     @staticmethod
-    def load_checkpoint(chkpt_dir_path, rollout_time, network, chkpt_num=None):
+    def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
         if chkpt_num == None:
             chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
         chkpt_path = chkpt_dir_path / str(chkpt_num)
         print("Loading checkpoint: ", chkpt_path)
-        env = get_environment(network, episode_timesteps=rollout_time)
 
         nets = []
         for tl_id in env.tl_ids:

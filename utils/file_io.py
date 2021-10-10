@@ -151,6 +151,8 @@ def parse_test_config(test_config_path):
     ret['chkpt_num'] = int(test_args['chkpt-number'])
     ret['seed'] = int(test_args['seed'])
     ret['chkpt_dir_path'] = Path(ret['orig_path']) / 'checkpoints' 
+    ret['agent_type'] = test_args['agent_type']
+    ret['network'] = test_args['network']
 
     return ret
 

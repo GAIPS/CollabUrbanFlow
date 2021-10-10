@@ -22,6 +22,14 @@ from utils.utils import concat
 mp = multiprocessing.get_context('spawn')
 
 
+TRAIN_CONFIG_PATH = 'config/train.config'
+
+
+def get_train_path(batch_path):
+    train_cfg_paths = [p for p in batch_path.rglob('train.config')]
+    if len(train_cfg_paths) == 0: return TRAIN_CONFIG_PATH
+    return train_cfg_paths[0]
+
 class NoDaemonProcess(mp.Process):
     @property
     def daemon(self):
@@ -139,6 +147,14 @@ def rollout_batch(test=False, experiment_dir=None):
         num_processors = processors_total
         print(f'Number of processors downgraded to {num_processors}\n')
 
+
+    # Get agent_type and network
+    train_cfg_path = get_train_path(batch_path)
+    train_config = configparser.ConfigParser()
+    train_config.read(train_cfg_path)
+    agent_type = train_config.get('agent_type', 'agent_type')
+    network = train_config.get('train_args', 'network')
+
     # Override rollouts config files with test.config file parameters.
     test_config = configparser.ConfigParser()
     test_config.read('config/test.config')
@@ -179,7 +195,9 @@ def rollout_batch(test=False, experiment_dir=None):
             test_config.set(cfg_key, "run-path", str(run_path))
             test_config.set(cfg_key, "chkpt-number", str(chkpt_num))
             test_config.set(cfg_key, "seed", str(seed))
-            
+            test_config.set(cfg_key, "network", network)
+            test_config.set(cfg_key, "agent_type", agent_type)
+
             # Write temporary train config file.
             cfg_path = tmp_path / f'rollouts-{run_path.name}-{chkpt_num}-{seed}.config'
             rollouts_cfg_paths.append(str(cfg_path))

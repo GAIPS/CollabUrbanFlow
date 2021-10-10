@@ -2,6 +2,7 @@
 import numpy as np
 import torch
 from pytorch_lightning import Trainer
+from agents.dqn import Agent
 
 from tqdm.auto import trange
 from utils.file_io import expr_logs_dump

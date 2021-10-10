@@ -31,11 +31,12 @@ TRAIN_CONFIG_PATH = 'config/train.config'
 def main(test_config_path=None):
     # Setup config parser path.
     args = parse_test_config(test_config_path)
-    
     orig_path =  args['orig_path']
     rollout_time =  args['rollout_time']
     chkpt_num =  args['chkpt_num']
     seed =  args['seed']
+    agent_type = args['agent_type']
+    network = args['network']
     chkpt_dir_path = Path(orig_path) / 'checkpoints' 
 
     target_path = expr_path_test_target(orig_path)
@@ -56,9 +57,7 @@ def main(test_config_path=None):
     env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
 
-    train_args = parse_train_config(TRAIN_CONFIG_PATH)
-    agent_type = train_args['agent_type']
-    agent = load_agent(agent_type, chkpt_dir_path, chkpt_num, rollout_time, train_args["network"])
+    agent = load_agent(env, agent_type, chkpt_dir_path, chkpt_num, rollout_time, network)
 
     rollback_loop = get_loop(agent_type, train=False)
     if agent_type == "DQN":
@@ -71,4 +70,4 @@ def main(test_config_path=None):
     return info_dict
 
 if __name__ == '__main__':
-    main(run_path='train.config')
+    main(test_config_path='data/emissions/20211010185842.098537/')
