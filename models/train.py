@@ -67,7 +67,8 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     train_loop = get_loop(agent_type)
     if agent_type == 'DQN':
-        info_dict = train_loop(agent)
+        info_dict = train_loop(env, agent.model, experiment_time,
+                               save_agent_interval, chkpt_dir, seed)
     else:
         info_dict = train_loop(env, agent, approx, experiment_time, save_agent_interval, chkpt_dir)
 
