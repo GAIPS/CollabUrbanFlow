@@ -2,7 +2,6 @@
 import numpy as np
 import torch
 from pytorch_lightning import Trainer
-from agents.dqn import Agent
 
 from tqdm.auto import trange
 from utils.file_io import expr_logs_dump
@@ -51,10 +50,9 @@ def train_loop(env, model, experiment_time, save_agent_interval, chkpt_dir, seed
 
     return model.env.info_dict
 
-def rollback_loop(env , nets, target_path, rollout_time):
+def rollback_loop(env, agent, nets, rollout_time, target_path):
 
     env.emit = True
-    agent = Agent(env)
     # TODO: Get device
     # TODO: Move emissions to a separate module.
     # play_step runs 10 timesteps at a time, hence rollout_time/10
@@ -63,4 +61,4 @@ def rollback_loop(env , nets, target_path, rollout_time):
 
     expr_logs_dump(target_path, 'emission_log.json', env.emissions)
 
-    return agent.env.info_dict
+    return env.info_dict

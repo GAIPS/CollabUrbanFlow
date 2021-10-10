@@ -494,6 +494,7 @@ class DQN_MODEL:
     @staticmethod
     def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
+        
         if chkpt_num == None:
             chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
         chkpt_path = chkpt_dir_path / str(chkpt_num)
@@ -505,7 +506,8 @@ class DQN_MODEL:
             dqn.load_state_dict(torch.load(chkpt_path / f'{tl_id}.chkpt'))
             nets.append(dqn)
 
-        return env, nets
+        agent = Agent(env)
+        return agent, nets
 
     @staticmethod
     def add_model_specific_args():  # pragma: no-cover

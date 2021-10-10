@@ -60,7 +60,7 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
     return env.info_dict
 
 # TODO: Move emissions to environment
-def rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num):
+def rollback_loop(env, agent, approx, rollout_time, target_path):
     # Makes sure the environment will generate emissions.
     env.emit = True
     gen = env.loop(rollout_time)

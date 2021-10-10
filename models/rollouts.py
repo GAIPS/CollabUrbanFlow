@@ -57,14 +57,15 @@ def main(test_config_path=None):
     env = Environment(roadnet, eng)
     approx = TileCodingApproximator(roadnet, flows)
 
-    agent = load_agent(env, agent_type, chkpt_dir_path, chkpt_num, rollout_time, network)
+    # TODO: nets are approximators -- make load_agent produce the two. 
+    agent, nets = load_agent(env, agent_type, chkpt_dir_path, chkpt_num, rollout_time, network)
 
     rollback_loop = get_loop(agent_type, train=False)
     if agent_type == "DQN":
-        info_dict = rollback_loop(agent[0], agent[1], target_path, rollout_time)
+        info_dict = rollback_loop(env, agent, nets, rollout_time, target_path)
     else:
         agent.stop()
-        info_dict = rollback_loop(env, agent, approx, rollout_time, target_path, chkpt_num)
+        info_dict = rollback_loop(env, agent, approx, rollout_time, target_path)
     
     info_dict['id'] = chkpt_num
     return info_dict
