@@ -8,6 +8,7 @@ from utils.file_io import expr_logs_dump
 
 def train_loop(env, model, experiment_time, save_agent_interval, chkpt_dir, seed):
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.save_path = chkpt_dir
     seed_everything(seed)
     # FIXME: RLDataLoader apperantly has an irregular
@@ -22,25 +23,28 @@ def train_loop(env, model, experiment_time, save_agent_interval, chkpt_dir, seed
     # 10000 of populate. Since each trainer step runs 10 env timesteps, we need to divide max_steps by 10.
     assert experiment_time > save_agent_interval
     max_trainer_steps = (experiment_time-10000)/10
-
-    trainer = Trainer(
-        max_steps=max_trainer_steps,
-        log_every_n_steps=500,
-        val_check_interval=100
-    )
+    trainer_args = {
+        'max_steps':max_trainer_steps,
+        'log_every_n_steps':500,
+        'val_check_interval':100
+    }
+    if device.type == 'cuda':
+        trainer_args['gpus'] = 1
+    trainer = Trainer(**trainer_args)
     trainer.fit(model)
 
     return env.info_dict
 
 def rollback_loop(env, agent, nets, rollout_time, target_path, seed):
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     env.emit = True
     seed_everything(seed)
     # TODO: Get device
     # TODO: Move emissions to a separate module.
     # play_step runs 10 timesteps at a time, hence rollout_time/10
     for timestep in trange(rollout_time//10, position=1):
-        agent.play_step(nets, epsilon=0.0)
+        agent.play_step(nets, epsilon=0.0, device=device)
 
     expr_logs_dump(target_path, 'emission_log.json', env.emissions)
 

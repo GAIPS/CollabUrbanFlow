@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 
 class MLP(nn.Module):
@@ -24,11 +25,14 @@ class MLP(nn.Module):
         size of hidden layers.
         """
         super().__init__()
+        # at beginning of the script
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
         self.net = nn.Sequential(
             nn.Linear(obs_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, n_actions)
-        )
+        ).to(device)
 
     def forward(self, x):
         return self.net(x.float())

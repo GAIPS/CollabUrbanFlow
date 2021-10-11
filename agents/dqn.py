@@ -406,7 +406,6 @@ class DQNLightning(pl.LightningModule):
 
 def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
-    
     if chkpt_num == None:
         chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
     chkpt_path = chkpt_dir_path / str(chkpt_num)
