@@ -145,7 +145,7 @@ def main(experiment_root_folder=None):
     experiment_time = args['experiment_time']
     episode_time = args['experiment_save_agent_interval']
     total_episodes = int(experiment_time / episode_time)
-    agent_type = 'A_CAT'
+    agent_type = args['agent_type']
 
     actions = []
     rewards = []

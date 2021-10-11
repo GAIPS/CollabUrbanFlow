@@ -13,13 +13,13 @@ import numpy as np
 from tqdm import tqdm
 from tqdm.auto import trange
 
-from environment import Environment
 from features import compute_delay, compute_pressure
 from utils.network import get_phases
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump
 
-def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
+def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, seed):
     # 1) Seed everything
+    np.random.seed(seed)    
     num_episodes = int(experiment_time / episode_time)
 
     s_prev = None
@@ -60,10 +60,11 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir):
     return env.info_dict
 
 # TODO: Move emissions to environment
-def rollback_loop(env, agent, approx, rollout_time, target_path):
+def rollback_loop(env, agent, approx, rollout_time, target_path, seed):
     # Makes sure the environment will generate emissions.
     env.emit = True
     gen = env.loop(rollout_time)
+    np.random.seed(seed)
 
     try:
         while True:

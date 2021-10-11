@@ -34,7 +34,7 @@ RUN_CONFIG_PATH = 'config/run.config'
 # Main abstracts the training loop and assigns an
 # agent to its environment
 # TODO: Put logging on a decorator.
-def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
+def main(train_config_path=TRAIN_CONFIG_PATH):
     # Setup config parser path.
     print(f'Loading train parameters from: {train_config_path}')
 
@@ -44,6 +44,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     experiment_time = int(train_args['experiment_time'])
     save_agent_interval = int(train_args['experiment_save_agent_interval'])
+    seed = int(train_args.get('experiment_seed', 0))
 
     # Epsilon 
     epsilon_init = train_args['epsilon_init']
@@ -64,15 +65,13 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
     approx = TileCodingApproximator(roadnet, flows)
     agent = get_agent(agent_type, env, epsilon_init,
                       epsilon_final, epsilon_timesteps)
-    # epsilon_timesteps, network, save_agent_interval,experiment_time, chkpt_dir, seed)
 
     train_loop = get_loop(agent_type)
     if agent_type == 'DQN':
-        # seed_everything(seed)
         info_dict = train_loop(env, agent, experiment_time,
                                save_agent_interval, chkpt_dir, seed)
     else:
-        info_dict = train_loop(env, agent, approx, experiment_time, save_agent_interval, chkpt_dir)
+        info_dict = train_loop(env, agent, approx, experiment_time, save_agent_interval, chkpt_dir, seed)
 
     # Store train info dict.
     expr_logs_dump(expr_path, 'train_log.json', info_dict)

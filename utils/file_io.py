@@ -113,7 +113,8 @@ def expr_logs_dump(expr_path, filename, data):
 
 def parse_train_config(train_config_path,
         args_list=['network', 'experiment_time', 'experiment_save_agent_interval',
-            'epsilon_init', 'epsilon_final', 'epsilon_schedule_timesteps'] ):
+            'experiment_seed', 'epsilon_init', 'epsilon_final',
+            'epsilon_schedule_timesteps'] ):
     if isinstance(train_config_path, str):
         train_config_path = Path(train_config_path)
 
@@ -127,6 +128,9 @@ def parse_train_config(train_config_path,
     ret['network'] = train_args['network']
     ret['experiment_time']= int(train_args['experiment_time'])
     ret['experiment_save_agent_interval']= int(train_args['experiment_save_agent_interval'])
+
+    if 'experiment_seed' in train_args.keys():
+        ret['experiment_seed'] = int(train_args['experiment_seed']) 
     ret['agent_type'] = train_config["agent_type"]["agent_type"]
     # Epsilon 
     ret['epsilon_init'] = float(train_args['epsilon_init'])

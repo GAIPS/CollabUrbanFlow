@@ -7,7 +7,6 @@
         http://www.dabeaz.com/finalgenerator/FinalGenerator.pdf
 """
 import json
-
 from datetime import datetime
 
 from pathlib import Path
@@ -15,13 +14,15 @@ from tqdm.auto import trange
 import configparser
 import numpy as np
 from cityflow import Engine
-from agents import load_agent
-from models import get_loop
+from pytorch_lightning import seed_everything
+
 
 from environment import Environment
 from approximators.tile_coding import TileCodingApproximator
 from utils.file_io import engine_create, engine_load_config, \
     expr_path_test_target, parse_test_config, parse_train_config
+from agents import load_agent
+from models import get_loop
 
 # prevent randomization
 PYTHONHASHSEED=-1
@@ -29,7 +30,8 @@ PYTHONHASHSEED=-1
 TRAIN_CONFIG_PATH = 'config/train.config'
 
 def main(test_config_path=None):
-    # Setup config parser path.
+
+    # READ  config
     args = parse_test_config(test_config_path)
     orig_path =  args['orig_path']
     rollout_time =  args['rollout_time']
@@ -39,6 +41,7 @@ def main(test_config_path=None):
     network = args['network']
     chkpt_dir_path = Path(orig_path) / 'checkpoints' 
 
+    # DETERMINE target
     target_path = expr_path_test_target(orig_path)
 
     # TODO: replace by pathlib
@@ -52,8 +55,7 @@ def main(test_config_path=None):
     with (config_dir_path / 'config.json').open('w') as f: json.dump(config, f)
     eng = engine_create(config_dir_path / 'config.json', seed=seed, thread_num=4)
 
-    np.random.seed(seed)
-
+    seed_everything(seed)
     env = Environment(network, roadnet, eng, episode_timesteps=rollout_time)
     approx = TileCodingApproximator(roadnet, flows)
 
@@ -62,10 +64,10 @@ def main(test_config_path=None):
 
     rollback_loop = get_loop(agent_type, train=False)
     if agent_type == "DQN":
-        info_dict = rollback_loop(env, agent, nets, rollout_time, target_path)
+        info_dict = rollback_loop(env, agent, nets, rollout_time, target_path, seed)
     else:
         agent.stop()
-        info_dict = rollback_loop(env, agent, approx, rollout_time, target_path)
+        info_dict = rollback_loop(env, agent, approx, rollout_time, target_path, seed)
     
     info_dict['id'] = chkpt_num
     return info_dict
