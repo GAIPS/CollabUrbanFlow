@@ -52,7 +52,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     eng = engine_create(network, seed=seed, thread_num=4)
     config, flows, roadnet = engine_load_config(network) 
-    env = Environment(roadnet, eng)
+    env = Environment(network, roadnet, eng, episode_timesteps=save_agent_interval)
 
     np.random.seed(seed)
     expr_path = expr_path_create(network)
@@ -62,12 +62,14 @@ def main(train_config_path=TRAIN_CONFIG_PATH, seed=0):
 
     expr_config_dump(network, expr_path, config, flows, roadnet)
     approx = TileCodingApproximator(roadnet, flows)
-    agent = get_agent(agent_type, env, epsilon_init, epsilon_final,
-                      epsilon_timesteps, network, save_agent_interval,experiment_time, chkpt_dir, seed)
+    agent = get_agent(agent_type, env, epsilon_init,
+                      epsilon_final, epsilon_timesteps)
+    # epsilon_timesteps, network, save_agent_interval,experiment_time, chkpt_dir, seed)
 
     train_loop = get_loop(agent_type)
     if agent_type == 'DQN':
-        info_dict = train_loop(env, agent.model, experiment_time,
+        # seed_everything(seed)
+        info_dict = train_loop(env, agent, experiment_time,
                                save_agent_interval, chkpt_dir, seed)
     else:
         info_dict = train_loop(env, agent, approx, experiment_time, save_agent_interval, chkpt_dir)

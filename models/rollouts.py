@@ -54,7 +54,7 @@ def main(test_config_path=None):
 
     np.random.seed(seed)
 
-    env = Environment(roadnet, eng)
+    env = Environment(network, roadnet, eng, episode_timesteps=rollout_time)
     approx = TileCodingApproximator(roadnet, flows)
 
     # TODO: nets are approximators -- make load_agent produce the two. 

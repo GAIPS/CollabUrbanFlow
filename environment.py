@@ -28,10 +28,11 @@ def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
     eng = engine_create(network, seed=seed, thread_num=thread_num)
     config, flows, roadnet = engine_load_config(network) 
 
-    return Environment(roadnet, eng, episode_timesteps=episode_timesteps)
+    return Environment(network, roadnet, eng, episode_timesteps=episode_timesteps)
 
 class Environment(object):
     def __init__(self,
+                 network, 
                  roadnet,
                  engine=None,
                  yellow=5,
@@ -55,6 +56,8 @@ class Environment(object):
             --------
             Converter object
         '''
+        # Network id
+        self.network = network
         # Signal plans regulation
         self.yellow = yellow
         self.min_green = min_green
