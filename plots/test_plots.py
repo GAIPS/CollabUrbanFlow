@@ -55,25 +55,29 @@ def get_lanes_lengths(network):
     return lanes_lengths
 
 def get_config(experiment_root_folder, config_filename):
-    # There are two types of experiments
-    # 1) Reinforcement learning --> train.config
-    # 2) Baseline --> baseline.config
+    return 'CoLight',  'constant',  'arterial'
 
-    # test training
-    config_path = list(Path(experiment_root_folder).rglob(config_filename))[0]
-    config = configparser.ConfigParser()
-    config.read(config_path)
-
-    if 'train' in config_filename:
-        agent_type = config['agent_type']['agent_type']
-        demand_type = config['train_args']['demand_type']
-        network = config['train_args']['network']
-    if 'baseline' in config_filename:
-        agent_type = config['baseline_args']['ts_type']
-        demand_type = config['baseline_args']['demand_type']
-        network = config['baseline_args']['network']
-
-    return agent_type, demand_type, network 
+# def get_config(experiment_root_folder, config_filename):
+#     # There are two types of experiments
+#     # 1) Reinforcement learning --> train.config
+#     # 2) Baseline --> baseline.config
+# 
+#     # test training
+#     config_path = list(Path(experiment_root_folder).rglob(config_filename))[0]
+#     config = configparser.ConfigParser()
+#     config.read(config_path)
+# 
+#     if 'train' in config_filename:
+#         # agent_type = config['agent_type']['agent_type']
+#         # demand_type = config['train_args']['demand_type']
+#         # network = config['train_args']['network']
+#         agent_type, demand_type, network = 
+#     if 'baseline' in config_filename:
+#         agent_type = config['baseline_args']['ts_type']
+#         demand_type = config['baseline_args']['demand_type']
+#         network = config['baseline_args']['network']
+# 
+#     return agent_type, demand_type, network 
 
 def main(experiment_root_folder=None, config_filename='train.config'):
 
@@ -142,7 +146,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
             mean_values_per_eval.append({'train_run': Path(log_file).parts[-4],
                                         'speed': df_per_vehicle_mean['speed'],
-                                        'velocity': df_per_vehicle_mean['velocity'],
+                                        # 'velocity': df_per_vehicle_mean['velocity'],
                                         'stops': df_per_vehicle_mean['stops'],
                                         'waiting_time': df_per_vehicle_mean['waiting'],
                                         'travel_time': df_per_vehicle_mean['total'],
@@ -160,7 +164,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
         else:
             mean_values_per_eval.append({'train_run': Path(log_file).parts[-4],
                                         'speed': df_per_vehicle_mean['speed'],
-                                        'velocity': df_per_vehicle_mean['velocity'],
+                                        # 'velocity': df_per_vehicle_mean['velocity'],
                                         'stops': df_per_vehicle_mean['stops'],
                                         'waiting_time': df_per_vehicle_mean['waiting'],
                                         'travel_time': df_per_vehicle_mean['total'],

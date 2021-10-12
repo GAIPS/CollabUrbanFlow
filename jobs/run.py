@@ -26,28 +26,31 @@ from plots.test_plots import main as test_plots
 
 if __name__ == '__main__':
     # 1) Train agent(s).
-    experiment_root_path = train()
+    # experiment_root_path = train()
     # 2) Create train plots.
-    train_plots(experiment_root_path)
+    # experiment_root_path = 'data/emissions/train_logs'
+    # experiment_root_path = 'data/emissions/anon_1_3_lisbon_uniform.json_10_08_09_55_28/train_logs/'
+    # train_plots(experiment_root_path)
 
 
     # 3) Execute rollouts with last saved checkpoints (test).
-    rollouts(test=True, experiment_dir=experiment_root_path)
+    # rollouts(test=True, experiment_dir=experiment_root_path)
 
     # 4) Create plots with metrics plots for final agent.
+    experiment_root_path = 'data/emissions/anon_1_3_lisbon_uniform.json_10_08_09_55_28/test/rollout_logs'
     test_plots(experiment_root_path)
 
 
     # 5) Cleaning emissions.
-    print('\nCleaning and compressing files...\n')
-    experiment_root_path = Path(experiment_root_path)
-    for csv_path in experiment_root_path.rglob('emission_log.json'):
-        Path(csv_path).unlink()
+    # print('\nCleaning and compressing files...\n')
+    # experiment_root_path = Path(experiment_root_path)
+    # for csv_path in experiment_root_path.rglob('emission_log.json'):
+    #     Path(csv_path).unlink()
 
-    shutil.make_archive(experiment_root_path,
-                    'gztar',
-                    os.path.dirname(experiment_root_path),
-                    experiment_root_path.name)
-    shutil.rmtree(experiment_root_path)
+    # shutil.make_archive(experiment_root_path,
+    #                 'gztar',
+    #                 os.path.dirname(experiment_root_path),
+    #                 experiment_root_path.name)
+    # shutil.rmtree(experiment_root_path)
 
     print('Experiment folder: {0}'.format(experiment_root_path))

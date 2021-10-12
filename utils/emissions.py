@@ -114,27 +114,29 @@ def get_vehicles(emissions_df):
         stops_df, on='id', how='inner',
     )
 
-    if 'length' in emissions_df:
-        # Assumptions there are no loops
-        # Gets unique timestamp for length
-        dist_df = pd.pivot_table(
-            emissions_df,
-            index=('id', 'lane', 'length'),
-            values='time',
-            aggfunc=np.max
-        )
-        dist_df = pd.pivot_table(
-            dist_df.reset_index(),
-            index='id',
-            values='length',
-            aggfunc=np.sum
-        ). \
-        rename(columns={'length': 'dist'}, inplace=False)
 
-        vehs_df = vehs_df.join(
-            dist_df, on='id', how='inner',
-        )
-        vehs_df['velocity'] = vehs_df.apply(lambda x: x['dist'] / x['total'], axis=1)
+    # TODO: Remove
+    # if 'length' in emissions_df:
+    #     # Assumptions there are no loops
+    #     # Gets unique timestamp for length
+    #     dist_df = pd.pivot_table(
+    #         emissions_df,
+    #         index=('id', 'lane', 'length'),
+    #         values='time',
+    #         aggfunc=np.max
+    #     )
+    #     dist_df = pd.pivot_table(
+    #         dist_df.reset_index(),
+    #         index='id',
+    #         values='length',
+    #         aggfunc=np.sum
+    #     ). \
+    #     rename(columns={'length': 'dist'}, inplace=False)
+
+    #     vehs_df = vehs_df.join(
+    #         dist_df, on='id', how='inner',
+    #     )
+    #     vehs_df['velocity'] = vehs_df.apply(lambda x: x['dist'] / x['total'], axis=1)
 
     return vehs_df
 
