@@ -137,7 +137,7 @@ class VEAgent(Agent):
         state = torch.tensor([self.state]).split(4, dim=1)
         #Get Q_values
         for (tid, agent) in agents.items():
-            qTable = node_net(state[self.env.tl_ids.index(tid)]).numpy()[0]
+            qTable = node_net(state[self.env.tl_ids.index(tid)]).cpu().numpy()[0]
             payoutFunction = ActionTable([agent], qTable)
             agent.payout_functions = [payoutFunction]
 
@@ -145,7 +145,7 @@ class VEAgent(Agent):
             index1 = self.env.tl_ids.index(agent1)
             index2 = self.env.tl_ids.index(agent2)
             concat_state = torch.cat((state[index1],state[index2]), dim=-1)
-            qTable = edge_net(concat_state).numpy()[0]
+            qTable = edge_net(concat_state).cpu().numpy()[0]
             agent1 = agents[agent1]
             agent2 = agents[agent2]
             payoutFunction = ActionTable([agent1, agent2], qTable)
@@ -310,11 +310,12 @@ class VELightning(DQNLightning):
         warm_steps = kwargs["warm_start_steps"]
         kwargs["warm_start_steps"] = 0
         super().__init__(env, **kwargs)
-        self.node_net = self.init_net(self.obs_size, self.num_actions, self.hidden_size)
-        self.node_target_net = self.init_net(self.obs_size, self.num_actions, self.hidden_size)
-        self.edge_net = self.init_net(self.obs_size * 2, self.num_actions ** 2, self.hidden_size)
-        self.edge_target_net = self.init_net(self.obs_size * 2, self.num_actions ** 2, self.hidden_size)
+        self.node_net = self.init_net(self.obs_size, self.num_actions, self.hidden_size).cuda()
+        self.node_target_net = self.init_net(self.obs_size, self.num_actions, self.hidden_size).cuda()
+        self.edge_net = self.init_net(self.obs_size * 2, self.num_actions ** 2, self.hidden_size).cuda()
+        self.edge_target_net = self.init_net(self.obs_size * 2, self.num_actions ** 2, self.hidden_size).cuda()
         self.agent = VEAgent(self.env, self.buffer)
+        self.device_ = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
         with open('data/networks/' + env.network + "/edges.json") as f:
@@ -416,7 +417,7 @@ class VELightning(DQNLightning):
         batch_size = state[0].size(0)
         q_total_size = (self.num_actions,) * self.num_intersections + (batch_size,)
 
-        q_total = torch.zeros(q_total_size)
+        q_total = torch.zeros(q_total_size, device=self.device_)
         for action_pair in list(product(*a)):
             for i, action in enumerate(action_pair):
                 q_total[action_pair].add_(node_net(state[i]).T[action])

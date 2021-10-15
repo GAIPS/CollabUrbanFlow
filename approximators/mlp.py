@@ -64,18 +64,18 @@ class RNN(nn.Module):
         """
         super(RNN, self).__init__()
         # at beginning of the script
-
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.obs_size = obs_size
         self.hidden_size = hidden_size
         self.layer_dim = 1
-        self.rnn = nn.RNN(obs_size, hidden_size, self.layer_dim, batch_first=True, nonlinearity='relu')
-        self.fc = nn.Linear(hidden_size, n_actions)
+        self.rnn = nn.RNN(obs_size, hidden_size, self.layer_dim, batch_first=True, nonlinearity='relu').to(self.device)
+        self.fc = nn.Linear(hidden_size, n_actions).to(self.device)
 
     def forward(self, x):
-        h0 = torch.zeros(self.layer_dim, x.size(0), self.hidden_size).requires_grad_()
-        x_ = x.view(-1, 1, self.obs_size).float()
+        h0 = torch.zeros(self.layer_dim, x.size(0), self.hidden_size, device = self.device).requires_grad_()
+        x_ = x.view(-1, 1, self.obs_size).float().to(self.device)
         # One time step
-        out, hn = self.rnn(x_, h0.detach())
+        out, hn = self.rnn(x_, h0)
         out = self.fc(out[:, -1, :])
         return out
 
