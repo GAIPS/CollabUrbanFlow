@@ -20,32 +20,22 @@ References:
 [1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
 Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
-import argparse
 from collections.abc import Iterable
 from pathlib import Path
 
-from tqdm.auto import trange
 import numpy as np
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-
-from utils.file_io import parse_train_config, \
-    expr_logs_dump, expr_path_create, \
-    expr_path_test_target
-from plots.train_plots import main as train_plots
-from plots.test_plots import main as test_plots
-from utils.utils import concat
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.mlp import MLP
 
 TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
+
 
 def simple_hash(x): return hash(x) % (11 * 255)
 
@@ -81,7 +71,6 @@ def get_experience(batch, obs_size, agent_index):
                rewards.split(1, dim=-1)[agent_index],
                next_states.split(obs_size, dim=1)[agent_index]
            ), dones
-
 
 
 class Agent:
@@ -164,6 +153,7 @@ class Agent:
         * done: bool
         if the episode is over
         """
+
         actions = self.act(net, epsilon, device)
 
         # do step in the environment -- 10s
@@ -226,16 +216,8 @@ class DQNLightning(pl.LightningModule):
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
 
-        self.net = [MLP(
-            self.obs_size,
-            self.num_actions,
-            self.hidden_size
-        ) for _ in range(self.num_intersections)]
-        self.target_net = [MLP(
-            self.obs_size,
-            self.num_actions,
-            self.hidden_size
-        ) for _ in range(self.num_intersections)]
+        self.net = self.init_net(self.obs_size, self.num_actions, self.hidden_size)
+        self.target_net = self.init_net(self.obs_size, self.num_actions, self.hidden_size)
 
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
@@ -245,6 +227,12 @@ class DQNLightning(pl.LightningModule):
         if self.warm_start_steps > 0: self.populate(self.warm_start_steps)
         self.save_path = save_path
 
+    def init_net(self, obs_size, num_actions, hidden_size):
+        return [MLP(obs_size,
+                    num_actions,
+                    hidden_size
+        ) for _ in range(self.num_intersections)]
+
     @property
     def timestep(self):
         return self.agent.env.timestep
@@ -253,7 +241,7 @@ class DQNLightning(pl.LightningModule):
     def total_timestep(self):
         return self._total_timestep + self.timestep
 
-    def populate(self, net, steps=1000):
+    def populate(self, steps=1000):
         """Carries out several random steps through the
            environment to initially fill up the replay buffer with
            experiences.
@@ -263,7 +251,7 @@ class DQNLightning(pl.LightningModule):
         * steps: number of random steps to populate the buffer with
         """
         for i in range(steps):
-            self.agent.play_step(net, epsilon=1.0)
+            self.agent.play_step(self.net, epsilon=1.0)
 
     def forward(self, i, x):
         """Passes in a state `x` through the network and gets the
@@ -335,11 +323,7 @@ class DQNLightning(pl.LightningModule):
 
         # MAS -- Q_n(s_n, u_n), for n=1,...,|N|
         # N Independent Learners
-        for i, opt in enumerate(optimizers):
-            loss = self.dqn_mse_loss(batch, i)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
+        loss = self.loss_step(batch, optimizers)
 
         if done:
             self.total_reward = self.episode_reward
@@ -375,6 +359,14 @@ class DQNLightning(pl.LightningModule):
         for k, v in status_bar.items():
             self.log(k, v, logger=False, prog_bar=True)
 
+    def loss_step(self, batch, optimizers):
+        for i, opt in enumerate(optimizers):
+            loss = self.dqn_mse_loss(batch, i)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        return loss
+
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
         optimizers = [optim.Adam(self.net[i].parameters(), lr=self.lr) for i in range(self.num_intersections)]
@@ -404,8 +396,8 @@ class DQNLightning(pl.LightningModule):
             file_path.parent.mkdir(exist_ok=True)
             torch.save(self.net[i].state_dict(), file_path)
 
-def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
+def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
     if chkpt_num == None:
         chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
     chkpt_path = chkpt_dir_path / str(chkpt_num)

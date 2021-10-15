@@ -43,3 +43,7 @@ def concat(evaluations):
                     result[k] = defaultdict(list)
                 result[k][exid].append(v)
     return result
+
+
+def tuple_to_int(tuple, length=3):
+    return length ** 1 * tuple[0] + length ** 0 * tuple[1]
