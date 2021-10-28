@@ -5,6 +5,8 @@
     * https://cityflow.readthedocs.io/en/latest/roadnet.html
 """
 
+from utils import flatten
+
 def get_phases(roadnet):
     """ Forms a traffic light phase
 
@@ -24,6 +26,12 @@ def get_phases(roadnet):
 
     * speed_limit: dict<str, <dict<str, float>>
         Phases controlling the outgoing approaches.
+
+    Usage:
+    ------
+    >>> import json
+    >>> with open(roadnet_path, 'r') as f: roadnet = json.load(f)
+    >>> incoming, outgoing, _ = get_phases(roadnet)
     """
     incoming = {}
     outgoing = {}
@@ -69,3 +77,74 @@ def get_phases(roadnet):
         outgoing[intersection['id']] = roadlinks_outgoing
         speed_limit[intersection['id']] = edges_max_speeds
     return incoming, outgoing, speed_limit
+
+def get_neighbors(incoming, outgoing):
+    """Reads incoming and outgoing
+
+    Parameters:
+    -----------
+    * incoming: dict<str,<int, list<str>>
+        Phases controlling the incoming approaches.
+        key: intersection_code <str> --> phase_id <int> --> lane_ids <str>
+
+    * outgoing: dict<str,<int, list<str>>
+        Phases controlling the outgoing approaches.
+        key: intersection_code <str> --> phase_id <int> --> lane_ids <str>
+
+    Returns:
+    --------
+    * edge_list: list<tuple<int, int>>
+        List of pairs of intersections where (i, j) is an edge iff:
+                            i --> j 
+        If an outgoing lane of i is an incoming lane of j, or
+        i is a source of traffic flow for j, or
+        i is upstream to j.
+
+    * label_to_id: dict<str, int>
+        A mapping of intersection codes to intersection ids.
+
+    Usage:
+    ------
+    >>> edge_list, label_to_id = get_neighbors(incoming, outgoing)
+    """
+    assert incoming.keys() == outgoing.keys()
+    # Get labels mapping
+    id_to_label = dict(enumerate(sorted(incoming.keys())))
+    all_edges = [(i, j) for i in id_to_label for j in id_to_label if i >= j]
+
+    # Get incidence matrix
+    edge_list = []
+
+    prev_lu = ""
+    for u, v in all_edges:
+        lu, lv = id_to_label[u], id_to_label[v]
+        if prev_lu != lu:
+            uinc_set = set(flatten(incoming[lu].values()))
+            uout_set = set(flatten(outgoing[lu].values()))
+
+        vinc_set = set(flatten(incoming[lv].values()))
+        vout_set = set(flatten(outgoing[lv].values()))
+
+        # u = v
+        if u == v: edge_list.append((u, v))
+        # u --> v
+        if len(uout_set & vinc_set) > 0: edge_list.append((u, v))
+        # v --> u
+        if len(vout_set & uinc_set) > 0: edge_list.append((v, u))
+        prev_lu = lu
+    
+    return edge_list, id_to_label
+
+if __name__ == '__main__':
+
+    import json
+    networks = ('arterial', 'grid_6')
+    for network in networks:
+        with open(f'data/networks/{network}/roadnet.json', 'r') as f: roadnet = json.load(f)
+        incoming, outgoing, _ = get_phases(roadnet)
+        edge_list, id_to_label = get_neighbors(incoming, outgoing)
+        print(f'vvvvvvvvvv   edgeList({network})    vvvvvvvvvv') 
+        print(edge_list)
+
+        print(f'vvvvvvvvvv   id_to_label({network})   vvvvvvvvvv') 
+        print(id_to_label)

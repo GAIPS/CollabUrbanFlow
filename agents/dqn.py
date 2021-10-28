@@ -21,7 +21,6 @@ References:
 Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
 import argparse
-from collections.abc import Iterable
 from pathlib import Path
 
 from tqdm.auto import trange
@@ -40,7 +39,7 @@ from utils.file_io import parse_train_config, \
     expr_path_test_target
 from plots.train_plots import main as train_plots
 from plots.test_plots import main as test_plots
-from utils.utils import concat
+from utils.utils import concat, flatten
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.mlp import MLP
 
@@ -48,30 +47,6 @@ TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
 
 def simple_hash(x): return hash(x) % (11 * 255)
-
-
-def flatten(items, ignore_types=(str, bytes)):
-    """
-
-    Usage:
-    -----
-    > items = [1, 2, [3, 4, [5, 6], 7], 8]
-
-    > # Produces 1 2 3 4 5 6 7 8
-    > for x in flatten(items):
-    >         print(x)
-
-    Ref:
-    ----
-
-    David Beazley. `Python Cookbook.'
-    """
-    for x in items:
-        if isinstance(x, Iterable) and not isinstance(x, ignore_types):
-            yield from flatten(x)
-        else:
-            yield x
-
 
 def get_experience(batch, obs_size, agent_index):
     states, actions, rewards, dones, next_states = batch
