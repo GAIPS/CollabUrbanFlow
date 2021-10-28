@@ -162,7 +162,7 @@ class Environment(object):
 
     def reset(self):
         # self._emissions = [] 
-        self._active_phases = {tl_id: (0, 0) for tl_id in self.tl_ids}
+        self._active_phases = {tl_id: (1, 0) for tl_id in self.tl_ids}
         for tl_id in self.tl_ids:
             self.engine.set_tl_phase(tl_id, 0)
         self.engine.reset()
@@ -252,19 +252,21 @@ class Environment(object):
             current_action = actions[tl_id]
             phase_ctrl = None
             if current_time == self.yellow and self.timestep > 5:
-                # transitions to green
-                phase_ctrl = current_phase * 2
+                # transitions to green: y -> G
+                phase_ctrl = 2 * (current_phase - 1)
 
             elif (current_time >= self.yellow + self.min_green and current_action == 1) or \
                     (current_time == self.max_green):
-                # transitions to yellow
-                phase_ctrl = (current_phase * 2 + 1) % (2 * len(phases))
+                # transitions to yellow: G -> y
+                phase_ctrl = 2 * (current_phase - 1) + 1
 
                 # adjust log
-                next_phase = (current_phase + 1) % len(phases)
-                self._active_phases[tl_id] = (next_phase, 0)
+                next_phase = (current_phase % len(phases))
+                self._active_phases[tl_id] = (next_phase + 1, 0)
 
             if phase_ctrl is not None:
+                # phase_ctrl 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 0 
+                # phase      1 -> 2 -> 2 -> 3 -> 3 -> 4 -> 4 -> 1 -> 1
                 self.engine.set_tl_phase(tl_id, phase_ctrl)
 
     def log(self, actions):
