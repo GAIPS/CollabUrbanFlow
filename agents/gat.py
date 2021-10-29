@@ -95,6 +95,7 @@ class Agent:
         * replay_buffer: dqn.ReplayBuffer
             replay buffer storing experiences
         """
+
         self.env = env
         self.replay_buffer = replay_buffer
         self.reset()
@@ -209,7 +210,7 @@ class DQNLightning(pl.LightningModule):
                  save_path=None, **kwargs,
                  ):
         super().__init__(**kwargs)
-        self.automatic_optimization = False
+        # self.automatic_optimization = False
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
@@ -257,6 +258,7 @@ class DQNLightning(pl.LightningModule):
         self.total_reward = 0
         self.episode_reward = 0
         self._total_timestep = 0
+        self.cum_loss = 0
         if self.warm_start_steps > 0: self.populate(self.warm_start_steps)
         self.save_path = save_path
 
@@ -335,7 +337,8 @@ class DQNLightning(pl.LightningModule):
             next_state_values = next_state_values.detach()
 
         expected_state_action_values = next_state_values * self.gamma + rewards
-        return nn.MSELoss()(state_action_values, expected_state_action_values)
+        loss = nn.MSELoss()(state_action_values, expected_state_action_values)
+        return loss 
         # split and iterate over sections! -- beware assumption
         # gets experience from the agent
         # batch_data, dones = get_experience(batch, self.obs_size, agent_index)
@@ -382,7 +385,7 @@ class DQNLightning(pl.LightningModule):
         self.episode_reward += sum(reward) * 0.001
 
         # calculates training loss
-        opt = self.optimizers(use_pl_optimizer=True)
+        # opt = self.optimizers(use_pl_optimizer=True)
 
         # MAS -- Q_n(s_n, u_n), for n=1,...,|N|
         # N Independent Learners
@@ -393,14 +396,15 @@ class DQNLightning(pl.LightningModule):
         #     loss.backward()
         #     opt.step()
         loss = self.dqn_mse_loss(batch)
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-
+        # opt.zero_grad()
+        # loss.backward()
+        # opt.step()
+        self.cum_loss += loss.clone().detach().numpy()
         if done:
             self.total_reward = self.episode_reward
             self.episode_reward = 0
             self._total_timestep += self.episode_timesteps
+            self.cum_loss = 0
             if self.save_path is not None:
                 self.save_checkpoint(self.save_path, self.total_timestep)
             print('')  # Skip an output line
@@ -416,16 +420,16 @@ class DQNLightning(pl.LightningModule):
             "steps": torch.tensor(self.timestep).to(device),
             "total_reward": torch.tensor(self.total_reward).to(device),
             "reward": torch.mean(torch.tensor(reward).clone().detach()).to(device),
-
             "exploration_rate": torch.tensor(np.round(epsilon, 4)).to(device),
             "train_loss": loss.clone().detach().to(device)
         }
         status_bar = {
             "episode_reward": torch.tensor(self.episode_reward).to(device),
             "status_steps": torch.tensor(self.timestep).to(device),
-            "epsilon": torch.tensor(epsilon).to(device)
+            "epsilon": torch.tensor(epsilon).to(device),
         }
 
+        self.log('loss', loss.clone().detach().to(device), logger=True, prog_bar=True)
         for k, v in log.items():
             self.log(k, v, logger=True, prog_bar=False)
         for k, v in status_bar.items():
@@ -435,7 +439,7 @@ class DQNLightning(pl.LightningModule):
         """Initialize Adam optimizer."""
         optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
         # optimizers = [optim.Adam(self.net[i].parameters(), lr=self.lr) for i in range(self.num_intersections)]
-        return optimizer
+        return [optimizer]
 
     def __dataloader(self):
         """Initialize the Replay Buffer dataset used for retrieving experiences."""
@@ -469,11 +473,12 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
-    nets = []
-    for tl_id in env.tl_ids:
-        dqn = GAT()
-        dqn.load_state_dict(torch.load(chkpt_path / f'{tl_id}.chkpt'))
-        nets.append(dqn)
+    # nets = []
+    # for tl_id in env.tl_ids:
+    #     dqn = GAT()
+    #     dqn.load_state_dict(torch.load(chkpt_path / f'{tl_id}.chkpt'))
+    #     nets.append(dqn)
+    net = GAT().load_state_dict(torch.load(chkpt_path / f'247123161.chkpt'))
 
     agent = Agent(env)
-    return agent, nets
+    return agent, net

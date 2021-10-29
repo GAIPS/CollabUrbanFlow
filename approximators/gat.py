@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 
 class GAT(nn.Module):
-    def __init__(self, in_features, n_hidden, n_classes, dropout, alpha, n_heads):
+    def __init__(self, in_features=4, n_hidden=8, n_classes=2, dropout=0.6, alpha=0.2, n_heads=1):
         """Dense version of GAT."""
         super(GAT, self).__init__()
         self.dropout = dropout
