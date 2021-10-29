@@ -21,7 +21,12 @@ def train_loop(env, model, experiment_time, save_agent_interval, chkpt_dir, seed
 
     # 10000 of populate. Since each trainer step runs 10 env timesteps, we need to divide max_steps by 10.
     assert experiment_time > save_agent_interval
-    max_trainer_steps = (experiment_time-10000)/10
+    # DQN
+    # max_trainer_steps = (experiment_time-10000)/10
+    # GAT
+    # max_trainer_steps = (experiment_time + 10000) /10
+    max_trainer_steps = experiment_time /10
+    model.episode_timesteps = save_agent_interval
 
     trainer = Trainer(
         max_steps=max_trainer_steps,

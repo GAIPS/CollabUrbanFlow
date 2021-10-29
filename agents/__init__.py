@@ -23,6 +23,7 @@ def get_agent(agent_type, env, epsilon_init, epsilon_final, epsilon_timesteps):
         return MARLIN(env.phases, epsilon_init,
                       epsilon_final, epsilon_timesteps, network)
     if agent_type in ('DQN', 'GAT'):
+        # TODO: Place here the episode_timesteps
         hparams = { 
             'batch_size': 1000,
             'lr': 5e-3, 
