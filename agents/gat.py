@@ -98,14 +98,21 @@ class Agent:
 
         self.env = env
         self.replay_buffer = replay_buffer
+
+        edge_list, _ = get_neighbors(env.incoming_roadlinks, env.outgoing_roadlinks)
+        self._adjacency_matrix = get_adjacency_matrix(edge_list)
         self.reset()
+
+    @property
+    def adjacency_matrix(self):
+        return self._adjacency_matrix
 
     def reset(self):
         """Resets the environment and updates the state."""
         # Assumption: All intersections have the same phase.
         self.state = list(flatten(self.env.reset().values()))
 
-    def act(self, net, adj, epsilon, device):
+    def act(self, net, epsilon, device):
         """For a given network, decide what action to carry out
             using an epsilon-greedy policy.
 
@@ -123,22 +130,16 @@ class Agent:
         actions = {}
         N = len(self.env.tl_ids)
 
-        # for i, tl_id in enumerate(self.env.tl_ids):
-        # if np.random.random() < epsilon:
-        #     # TODO: Actions are change or keep for all intersections.
-        #     action = np.random.choice((0, 1))
-        # else:
-        #     # state = torch.tensor([self.state]).split(4, dim=1)[i]
         state = torch.tensor([self.state]).reshape((N, -1))
-        # state = torch.tensor(self.state)
 
         if device not in ["cpu"]:
             state = state.cuda(device)
 
-        q_values = net(state, adj)
+        q_values = net(state, self.adjacency_matrix)
 
         # Exploration & Exploitation:
         # XOR operation flips correctly
+        # TODO: verify flip
         actions = torch.argmax(q_values, dim=1).numpy()
         flip = np.random.random(N)
         actions = np.logical_xor(actions.astype(bool), flip < epsilon)
@@ -146,7 +147,7 @@ class Agent:
         return actions
 
     @torch.no_grad()
-    def play_step(self, net, adj, epsilon=0.0, device="cpu"):
+    def play_step(self, net, epsilon=0.0, device="cpu"):
         """Carries out a single interaction step between the agent
         and the environment.
 
@@ -166,7 +167,7 @@ class Agent:
         * done: bool
         if the episode is over
         """
-        actions = self.act(net, adj, epsilon, device)
+        actions = self.act(net, epsilon, device)
 
         # do step in the environment -- 10s
         for _ in range(10):
@@ -210,7 +211,6 @@ class DQNLightning(pl.LightningModule):
                  save_path=None, **kwargs,
                  ):
         super().__init__(**kwargs)
-        # self.automatic_optimization = False
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
@@ -233,8 +233,6 @@ class DQNLightning(pl.LightningModule):
         dropout = 0.6
         n_heads = 1
         alpha = 0.2
-        edge_list, _ = get_neighbors(env.incoming_roadlinks, env.outgoing_roadlinks)
-        self.adjacency_matrix = get_adjacency_matrix(edge_list)
 
         self.net = GAT(
             self.obs_size,
@@ -270,6 +268,10 @@ class DQNLightning(pl.LightningModule):
     def total_timestep(self):
         return self._total_timestep + self.timestep
 
+    @property
+    def adjacency_matrix(self):
+        return self.agent.adjacency_matrix
+
     def populate(self, steps=1000):
         """Carries out several random steps through the
            environment to initially fill up the replay buffer with
@@ -280,7 +282,7 @@ class DQNLightning(pl.LightningModule):
         * steps: number of random steps to populate the buffer with
         """
         for i in range(steps):
-            self.agent.play_step(self.net, self.adjacency_matrix, epsilon=1.0)
+            self.agent.play_step(self.net, epsilon=1.0)
         self.agent.reset()
 
     def forward(self, x):
@@ -302,7 +304,6 @@ class DQNLightning(pl.LightningModule):
         output = self.net(x, adj)
         return output
 
-    # def dqn_mse_loss(self, batch, agent_index):
     def dqn_mse_loss(self, batch):
         """Calculates the mse loss using a mini batch from the replay buffer.
 
@@ -339,28 +340,6 @@ class DQNLightning(pl.LightningModule):
         expected_state_action_values = next_state_values * self.gamma + rewards
         loss = nn.MSELoss()(state_action_values, expected_state_action_values)
         return loss 
-        # split and iterate over sections! -- beware assumption
-        # gets experience from the agent
-        # batch_data, dones = get_experience(batch, self.obs_size, agent_index)
-
-        # net = self.net[agent_index]
-        # target_net = self.target_net[agent_index]
-        # s_, a_, r_, s1_ = batch_data
-        # state_action_values = self.net[agent_index](s_).gather(1, a_).squeeze(-1)
-
-        # net = self.forward(batch)
-        # target_net = self.forward(batch)
-        # #target_net = self.target_net[agent_index]
-        # s_, a_, r_, s1_ = batch_data
-        # state_action_values = self.net(s_).gather(1, a_).squeeze(-1)
-        # with torch.no_grad():
-        #     next_state_values = target_net(s1_).max(1)[0]
-        #     next_state_values[dones] = 0.0
-        #     next_state_values = next_state_values.detach()
-
-        # expected_state_action_values = next_state_values * self.gamma + r_.squeeze(-1)
-
-        # return nn.MSELoss()(state_action_values, expected_state_action_values)
 
     def training_step(self, batch, nb_batch):
         """Carries out a single step through the environment to update
@@ -381,24 +360,10 @@ class DQNLightning(pl.LightningModule):
 
         
         # step through environment with agent
-        reward, done = self.agent.play_step(self.net, self.adjacency_matrix, epsilon, device)
+        reward, done = self.agent.play_step(self.net, epsilon, device)
         self.episode_reward += sum(reward) * 0.001
 
-        # calculates training loss
-        # opt = self.optimizers(use_pl_optimizer=True)
-
-        # MAS -- Q_n(s_n, u_n), for n=1,...,|N|
-        # N Independent Learners
-        # for i, opt in enumerate(optimizers):
-        #     # loss = self.dqn_mse_loss(batch, i)
-        #     loss = self.dqn_mse_loss(batch)
-        #     opt.zero_grad()
-        #     loss.backward()
-        #     opt.step()
         loss = self.dqn_mse_loss(batch)
-        # opt.zero_grad()
-        # loss.backward()
-        # opt.step()
         self.cum_loss += loss.clone().detach().numpy()
         if done:
             self.total_reward = self.episode_reward
@@ -411,10 +376,7 @@ class DQNLightning(pl.LightningModule):
 
         # Soft update of target network
         if self.timestep % self.sync_rate == 0:
-            # TODO: ModuleList
             self.target_net.load_state_dict(self.net.state_dict())
-            # for i in range(self.num_intersections):
-            # self.target_net[i].load_state_dict(self.net[i].state_dict())
 
         log = {
             "steps": torch.tensor(self.timestep).to(device),
@@ -438,7 +400,6 @@ class DQNLightning(pl.LightningModule):
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
         optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
-        # optimizers = [optim.Adam(self.net[i].parameters(), lr=self.lr) for i in range(self.num_intersections)]
         return [optimizer]
 
     def __dataloader(self):
@@ -456,29 +417,24 @@ class DQNLightning(pl.LightningModule):
         return batch[0].device.index if self.on_gpu else "cpu"
 
     """ Serialization """
-
-    # Serializes the object's copy -- sets get_wave to null.
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
 
         for i, tl_id in enumerate(self.env.tl_ids):
-            file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'{tl_id}.chkpt'
+            file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'GAT.chkpt'
             file_path.parent.mkdir(exist_ok=True)
             torch.save(self.net.state_dict(), file_path)
 
 def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
-
-    
     if chkpt_num == None:
         chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
-    # nets = []
-    # for tl_id in env.tl_ids:
-    #     dqn = GAT()
-    #     dqn.load_state_dict(torch.load(chkpt_path / f'{tl_id}.chkpt'))
-    #     nets.append(dqn)
-    net = GAT().load_state_dict(torch.load(chkpt_path / f'247123161.chkpt'))
-
+    # TODO: dropout, alpha, n_heads ?
+    state_dict = torch.load(chkpt_path / f'GAT.chkpt')
+    in_features, n_hidden = state_dict['attention_0.W'].shape
+    out_features = state_dict['out_att.W'].shape[-1]
+    net = GAT(in_features=in_features, n_hidden=n_hidden, n_classes=out_features)
+    net.load_state_dict(state_dict)
     agent = Agent(env)
     return agent, net
