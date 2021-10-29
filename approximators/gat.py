@@ -8,7 +8,26 @@
 """
 from torch import nn
 import torch
+import torch.nn.functional as F
 
+class GAT(nn.Module):
+    def __init__(self, in_features, n_hidden, n_classes, dropout, alpha, n_heads):
+        """Dense version of GAT."""
+        super(GAT, self).__init__()
+        self.dropout = dropout
+
+        self.attentions = [GraphAttentionLayer(in_features, n_hidden, dropout=dropout, alpha=alpha, concat=True) for _ in range(n_heads)]
+        for i, attention in enumerate(self.attentions):
+            self.add_module('attention_{}'.format(i), attention)
+
+        self.out_att = GraphAttentionLayer(n_hidden * n_heads, n_classes, dropout=dropout, alpha=alpha, concat=False)
+
+    def forward(self, x, adj):
+        x = F.dropout(x, self.dropout, training=self.training)
+        x = torch.cat([att(x, adj) for att in self.attentions], dim=1)
+        x = F.dropout(x, self.dropout, training=self.training)
+        x = F.elu(self.out_att(x, adj))
+        return F.log_softmax(x, dim=1)
 
 class GraphAttentionLayer(nn.Module):
     """Graph attention network"""
@@ -43,9 +62,8 @@ class GraphAttentionLayer(nn.Module):
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
     # adj_mtrx [source, in_feature]  [target, in_feature]
-    def forward(self, h, adj):
-        import ipdb; ipdb.set_trace()
-        Wh = torch.mm(h, self.W) # h.shape: (N, in_features), Wh.shape: (N, out_features)
+    def forward(self, hi, adj):
+        Wh = torch.mm(hi, self.W) # h.shape: (N, in_features), Wh.shape: (N, out_features)
         e = self._prepare_attentional_mechanism_input(Wh)
 
         zero_vec = -9e15*torch.ones_like(e)

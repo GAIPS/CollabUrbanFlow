@@ -5,7 +5,7 @@
     * https://cityflow.readthedocs.io/en/latest/roadnet.html
 """
 
-from utils import flatten
+from utils.utils import flatten
 
 def get_phases(roadnet):
     """ Forms a traffic light phase
@@ -134,6 +134,7 @@ def get_neighbors(incoming, outgoing):
         prev_lu = lu
     
     return edge_list, id_to_label
+
 
 if __name__ == '__main__':
 
