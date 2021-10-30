@@ -18,16 +18,30 @@ class GAT(nn.Module):
 
         self.attentions = [GraphAttentionLayer(in_features, n_hidden, dropout=dropout, alpha=alpha, concat=True) for _ in range(n_heads)]
         for i, attention in enumerate(self.attentions):
-            self.add_module('attention_{}'.format(i), attention)
+            self.add_module(f'attention_{i}', attention)
+
+        self.hiddens = [GraphAttentionLayer(n_hidden * n_heads, n_hidden, dropout=dropout, alpha=alpha, concat=True) for _ in range(n_heads)]
+        for i, hidden in enumerate(self.hiddens):
+            self.add_module(f'hidden_{i}', hidden)
 
         self.out_att = GraphAttentionLayer(n_hidden * n_heads, n_classes, dropout=dropout, alpha=alpha, concat=False)
 
     def forward(self, x, adj):
         x = F.dropout(x, self.dropout, training=self.training)
+
         x = torch.cat([att(x, adj) for att in self.attentions], dim=-1)
+
         x = F.dropout(x, self.dropout, training=self.training)
+
+        x = torch.cat([hid(x, adj) for hid in self.hiddens], dim=-1)
+
+        x = F.dropout(x, self.dropout, training=self.training)
+
         x = F.elu(self.out_att(x, adj))
-        return F.log_softmax(x, dim=1)
+
+        x = F.log_softmax(x, dim=1)
+
+        return x
 
 class GraphAttentionLayer(nn.Module):
     """Graph attention network"""

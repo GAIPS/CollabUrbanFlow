@@ -214,12 +214,12 @@ class DQNLightning(pl.LightningModule):
         # from environment import get_environment
         self.env = env
         self.obs_size = 4
-        self.hidden_size = 16
+        self.hidden_size = 8
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
 
         # Define GAT's parameters
-        dropout = 0.6
+        dropout = 0.0
         n_heads = 5
         alpha = 0.2
 
