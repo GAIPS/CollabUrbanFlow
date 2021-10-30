@@ -14,7 +14,6 @@ from pathlib import Path
 # append the path of the
 # parent directory
 sys.path.append(Path.cwd().as_posix())
-# print(sys.path)
 
 
 import numpy as np
@@ -67,8 +66,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH):
                       epsilon_final, epsilon_timesteps)
 
     train_loop = get_loop(agent_type)
-    # TODO: test by lightning
-    if agent_type in ('DQN', 'GAT'):
+    if agent_type in ('DQN', 'GATV'):
         info_dict = train_loop(env, agent, experiment_time,
                                save_agent_interval, chkpt_dir, seed)
     else:

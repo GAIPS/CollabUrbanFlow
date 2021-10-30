@@ -63,7 +63,7 @@ def main(test_config_path=None):
     agent, nets = load_agent(env, agent_type, chkpt_dir_path, chkpt_num, rollout_time, network)
 
     rollback_loop = get_loop(agent_type, train=False)
-    if agent_type in ('DQN', 'GAT'):
+    if agent_type in ('DQN', 'GATV'):
         info_dict = rollback_loop(env, agent, nets, rollout_time, target_path, seed)
     else:
         agent.stop()

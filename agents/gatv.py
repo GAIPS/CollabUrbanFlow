@@ -8,25 +8,27 @@
     * Centralized Training: Decentralized Execution.
     * Learning to communicate: Sends message to agents. 
     
+    To run a template:
+    1) set agent_type = GATV
+    >>> python models/train.py
+    >>> tensorboard --logdir lightning_logs
+
 
     TODO:
-    -----
-    Creates a MAS class that controls agents.
-    Separate buffers.
-
-    To run the template, just run:
-    `python dqn.py`
-
-    `tensorboard --logdir lightning_logs`
+    ----
+    * Move adjacency matrix to module.
 
     References:
     -----------
-    Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Lio, and Yoshua Bengio. 2017. Graph attention networks.
+    Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero,
+    Pietro Lio, and Yoshua Bengio. 2017.
+    `Graph attention networks. 2017`
     https://arxiv.org/abs/1710.10903
     https://github.com/Diego999/pyGAT/blob/master/train.py
 """
 import argparse
 from pathlib import Path
+from collections import OrderedDict
 
 from tqdm.auto import trange
 import numpy as np
@@ -40,7 +42,6 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
 
 from utils.file_io import parse_train_config, \
     expr_logs_dump, expr_path_create, \
@@ -50,7 +51,7 @@ from plots.test_plots import main as test_plots
 from utils.utils import concat, flatten
 from utils.network import get_neighbors
 from agents.experience import Experience, ReplayBuffer, RLDataset
-from approximators.gat import GAT
+from approximators.gatv import GATV
 
 TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
@@ -176,22 +177,19 @@ class Agent:
         return reward, done
 
 
-class DQNLightning(pl.LightningModule):
-    """Basic DQN Model.
+class GATVLightning(pl.LightningModule):
+    """ Graph Attention Networks
 
-    * Multi-layer Perceptron: for function approximation.
+    * For function approximation.
     * target_net: a dephased copy
     * ReplayBuffer: for storing experiences.
 
-    >>> DQNLightning(env="intersection")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
-    DQNLightning(
-      (net): GAT(
-        (net): Sequential(...)
-      )
-      (target_net): GAT(
-        (net): Sequential(...)
-      )
-    )
+
+    >>> env = get_environment('arterial')
+    >>> agent = get_agent('GATV', env, epsilon_init, epsilon_final, epsilon_timesteps)
+    >>> train_loop = get_loop('GATV')
+    >>> info_dict = train_loop(env, agent, experiment_time,
+                               save_agent_interval, chkpt_dir, seed)
     """
 
     def __init__(self, env, replay_size=200, warm_start_steps=0,
@@ -211,7 +209,6 @@ class DQNLightning(pl.LightningModule):
         self.episode_timesteps = episode_timesteps
         self.batch_size = batch_size
 
-        # from environment import get_environment
         self.env = env
         self.obs_size = 4
         self.hidden_size = 8
@@ -223,7 +220,7 @@ class DQNLightning(pl.LightningModule):
         n_heads = 5
         alpha = 0.2
 
-        self.net = GAT(
+        self.net = GATV(
             self.obs_size,
             self.hidden_size,
             self.num_actions,
@@ -231,7 +228,7 @@ class DQNLightning(pl.LightningModule):
             alpha,
             n_heads
         ) 
-        self.target_net = GAT(
+        self.target_net = GATV(
             self.obs_size,
             self.hidden_size,
             self.num_actions,
@@ -371,19 +368,11 @@ class DQNLightning(pl.LightningModule):
             "total_reward": torch.tensor(self.total_reward).to(device),
             "reward": torch.mean(torch.tensor(reward).clone().detach()).to(device),
             "exploration_rate": torch.tensor(np.round(epsilon, 4)).to(device),
-            "train_loss": loss.clone().detach().to(device)
-        }
-        status_bar = {
-            "episode_reward": torch.tensor(self.episode_reward).to(device),
-            "status_steps": torch.tensor(self.timestep).to(device),
-            "epsilon": torch.tensor(epsilon).to(device),
         }
 
         self.log('loss', loss.clone().detach().to(device), logger=True, prog_bar=True)
         for k, v in log.items():
-            self.log(k, v, logger=True, prog_bar=False)
-        for k, v in status_bar.items():
-            self.log(k, v, logger=False, prog_bar=True)
+            self.log(k, v, logger=True, prog_bar=True)
 
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
@@ -408,7 +397,7 @@ class DQNLightning(pl.LightningModule):
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
 
         for i, tl_id in enumerate(self.env.tl_ids):
-            file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'GAT.chkpt'
+            file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'GATV.chkpt'
             file_path.parent.mkdir(exist_ok=True)
             torch.save(self.net.state_dict(), file_path)
 
@@ -419,10 +408,10 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
     print("Loading checkpoint: ", chkpt_path)
 
     # TODO: dropout, alpha, n_heads ?
-    state_dict = torch.load(chkpt_path / f'GAT.chkpt')
+    state_dict = torch.load(chkpt_path / f'GATV.chkpt')
     in_features, n_hidden = state_dict['attention_0.W'].shape
     out_features = state_dict['out_att.W'].shape[-1]
-    net = GAT(in_features=in_features, n_hidden=n_hidden, n_classes=out_features, n_heads=5)
+    net = GATV(in_features=in_features, n_hidden=n_hidden, n_classes=out_features, n_heads=5)
     net.load_state_dict(state_dict)
     agent = Agent(env)
     return agent, net

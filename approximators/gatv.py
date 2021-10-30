@@ -10,19 +10,15 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 
-class GAT(nn.Module):
+class GATV(nn.Module):
     def __init__(self, in_features=4, n_hidden=8, n_classes=2, dropout=0.6, alpha=0.2, n_heads=1):
         """Dense version of GAT."""
-        super(GAT, self).__init__()
+        super(GATV, self).__init__()
         self.dropout = dropout
 
-        self.attentions = [GraphAttentionLayer(in_features, n_hidden, dropout=dropout, alpha=alpha, concat=True) for _ in range(n_heads)]
+        self.attentions = [GraphAttentionLayer(in_features, n_hidden, dropout=dropout, alpha=alpha, concat=False) for _ in range(n_heads)]
         for i, attention in enumerate(self.attentions):
             self.add_module(f'attention_{i}', attention)
-
-        self.hiddens = [GraphAttentionLayer(n_hidden * n_heads, n_hidden, dropout=dropout, alpha=alpha, concat=True) for _ in range(n_heads)]
-        for i, hidden in enumerate(self.hiddens):
-            self.add_module(f'hidden_{i}', hidden)
 
         self.out_att = GraphAttentionLayer(n_hidden * n_heads, n_classes, dropout=dropout, alpha=alpha, concat=False)
 
@@ -30,10 +26,6 @@ class GAT(nn.Module):
         x = F.dropout(x, self.dropout, training=self.training)
 
         x = torch.cat([att(x, adj) for att in self.attentions], dim=-1)
-
-        x = F.dropout(x, self.dropout, training=self.training)
-
-        x = torch.cat([hid(x, adj) for hid in self.hiddens], dim=-1)
 
         x = F.dropout(x, self.dropout, training=self.training)
 
@@ -101,8 +93,6 @@ class GraphAttentionLayer(nn.Module):
         Wh1 = torch.matmul(Wh, self.a[:self.out_features, :])
         Wh2 = torch.matmul(Wh, self.a[self.out_features:, :])
         # broadcast add
-        # e1 = Wh1 + Wh2.T
-
         e = Wh1 + torch.transpose(Wh2, dim0=-2,dim1=-1)
         return self.leakyrelu(e)
 

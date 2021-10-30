@@ -30,7 +30,7 @@ def train_loop(env, model, experiment_time, save_agent_interval, chkpt_dir, seed
 
     trainer = Trainer(
         max_steps=max_trainer_steps,
-        log_every_n_steps=500,
+        log_every_n_steps=100,
         val_check_interval=100
     )
     trainer.fit(model)
