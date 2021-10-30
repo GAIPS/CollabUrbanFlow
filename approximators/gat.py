@@ -24,7 +24,7 @@ class GAT(nn.Module):
 
     def forward(self, x, adj):
         x = F.dropout(x, self.dropout, training=self.training)
-        x = torch.cat([att(x, adj) for att in self.attentions], dim=1)
+        x = torch.cat([att(x, adj) for att in self.attentions], dim=-1)
         x = F.dropout(x, self.dropout, training=self.training)
         x = F.elu(self.out_att(x, adj))
         return F.log_softmax(x, dim=1)
@@ -55,6 +55,7 @@ class GraphAttentionLayer(nn.Module):
         self.concat = concat
 
         self.W = nn.Parameter(torch.empty(size=(in_features, out_features)))
+        print(f'W:{self.W.shape}, in_features:{in_features}, out_features:{out_features}')
         nn.init.xavier_uniform_(self.W.data, gain=1.414)
         self.a = nn.Parameter(torch.empty(size=(2 * out_features, 1)))
         nn.init.xavier_uniform_(self.a.data, gain=1.414)
@@ -64,24 +65,15 @@ class GraphAttentionLayer(nn.Module):
     # adj_mtrx [source, in_feature]  [target, in_feature]
     def forward(self, hi, adj):
         # h.shape: (N, in_features), Wh.shape: (N, out_features)
-        Wh = torch.matmul(hi, self.W) 
-        # if len(hi.shape) == 2:
-        #     Wh1 = torch.mm(hi, self.W) 
-        #     try:
-        #         assert torch.equal(Wh1, Wh)
-        #     except AssertionError:
-        #         import ipdb; ipdb.set_trace()
-
-        e = self._prepare_attentional_mechanism_input(Wh)
-        
-        # if len(hi.shape) == 3:
-        #     import ipdb; ipdb.set_trace()
-        zero_vec = -9e15*torch.ones_like(e)
         try:
-            attention = torch.where(adj > 0, e, zero_vec)
+            Wh = torch.matmul(hi, self.W) 
+
         except Exception:
             import ipdb; ipdb.set_trace()
-        # attention = F.softmax(attention, dim=1)
+        e = self._prepare_attentional_mechanism_input(Wh)
+        
+        zero_vec = -9e15*torch.ones_like(e)
+        attention = torch.where(adj > 0, e, zero_vec)
         attention = F.softmax(attention, dim=-1)
         attention = F.dropout(attention, self.dropout, training=self.training)
         h_prime = torch.matmul(attention, Wh)
@@ -102,15 +94,7 @@ class GraphAttentionLayer(nn.Module):
         # broadcast add
         # e1 = Wh1 + Wh2.T
 
-        #e2 = Wh1 + torch.transpose(Wh2, dim0=0,dim1=-1)
-        # if len(Wh.shape) == 3:
-        e2 = Wh1 + torch.transpose(Wh2, dim0=-2,dim1=-1)
-        # else:
-        #     e2 = Wh1 + torch.transpose(Wh2, dim0=0,dim1=-1)
-        # try:
-        #     assert torch.equal(e1, e2)
-        # except AssertionError:
-        #     import ipdb; ipdb.set_trace()
-        return self.leakyrelu(e2)
+        e = Wh1 + torch.transpose(Wh2, dim0=-2,dim1=-1)
+        return self.leakyrelu(e)
 
 
