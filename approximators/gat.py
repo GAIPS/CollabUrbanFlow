@@ -55,7 +55,6 @@ class GraphAttentionLayer(nn.Module):
         self.concat = concat
 
         self.W = nn.Parameter(torch.empty(size=(in_features, out_features)))
-        print(f'W:{self.W.shape}, in_features:{in_features}, out_features:{out_features}')
         nn.init.xavier_uniform_(self.W.data, gain=1.414)
         self.a = nn.Parameter(torch.empty(size=(2 * out_features, 1)))
         nn.init.xavier_uniform_(self.a.data, gain=1.414)
@@ -65,11 +64,7 @@ class GraphAttentionLayer(nn.Module):
     # adj_mtrx [source, in_feature]  [target, in_feature]
     def forward(self, hi, adj):
         # h.shape: (N, in_features), Wh.shape: (N, out_features)
-        try:
-            Wh = torch.matmul(hi, self.W) 
-
-        except Exception:
-            import ipdb; ipdb.set_trace()
+        Wh = torch.matmul(hi, self.W) 
         e = self._prepare_attentional_mechanism_input(Wh)
         
         zero_vec = -9e15*torch.ones_like(e)

@@ -64,17 +64,6 @@ def get_adjacency_matrix(edge_list):
     return adj
 
 
-# def get_experience(batch, obs_size, agent_index):
-#     states, actions, rewards, dones, next_states = batch
-#     return (
-#                states.split(obs_size, dim=1)[agent_index],
-#                actions.split(1, dim=-1)[agent_index],
-#                rewards.split(1, dim=-1)[agent_index],
-#                next_states.split(obs_size, dim=1)[agent_index]
-#            ), dones
-
-
-
 # Should this agent be general?
 # Or, should function approximation be associated to agnt
 class Agent:
@@ -225,13 +214,13 @@ class DQNLightning(pl.LightningModule):
         # from environment import get_environment
         self.env = env
         self.obs_size = 4
-        self.hidden_size = 8
+        self.hidden_size = 16
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
 
         # Define GAT's parameters
         dropout = 0.6
-        n_heads = 1
+        n_heads = 5
         alpha = 0.2
 
         self.net = GAT(
@@ -299,7 +288,6 @@ class DQNLightning(pl.LightningModule):
         """
         adj = self.adjacency_matrix
         # batch_size != num_intersections
-        # if x.shape[0] == self.batch_size:
         adj = adj.repeat(x.shape[0], 1, 1)
         output = self.net(x, adj)
         return output
@@ -434,7 +422,7 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
     state_dict = torch.load(chkpt_path / f'GAT.chkpt')
     in_features, n_hidden = state_dict['attention_0.W'].shape
     out_features = state_dict['out_att.W'].shape[-1]
-    net = GAT(in_features=in_features, n_hidden=n_hidden, n_classes=out_features)
+    net = GAT(in_features=in_features, n_hidden=n_hidden, n_classes=out_features, n_heads=5)
     net.load_state_dict(state_dict)
     agent = Agent(env)
     return agent, net
