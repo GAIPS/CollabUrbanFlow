@@ -28,22 +28,25 @@ class GATW(nn.Module):
         for i, attention in enumerate(self.attentions):
             self.add_module(f'attention_{i}', attention)
 
-        self.heads = nn.Linear(n_hidden * n_heads, n_hidden)
+        self.heads = nn.Linear(n_hidden, n_hidden)
 
-        self.prediction = nn.Linear(n_hidden * n_heads, out_features)
+        self.prediction = nn.Linear(n_hidden, out_features)
 
     def forward(self, x, adj):
+        # 1) Converts features to embeddings.
         x = self.embeddings(x)
 
-        x = torch.cat([att(x, adj) for att in self.attentions], dim=-1)
+        # TODO: Repeat 2-3-4 for multiple layers.
+        # 2) Run n_heads attention mechanisms.
+        x = torch.stack([att(x, adj) for att in self.attentions])
 
-        # if n_heads > 1
-        # x = torch.sum(x, dim=-1) * (1 / self.n_heads)
+        # 3) Average the stacked heads (dim=0)
+        x = torch.sum(x, dim=0) * (1 / self.n_heads)
 
-        x = self.heads(x)
+        # 4) Apply a non-linear activation
+        x = F.relu(self.heads(x))
 
-        x = F.relu(x)
-
+        # 5) Predicion layer  
         x = self.prediction(x)
 
         return x
@@ -86,21 +89,15 @@ class GraphAttentionLayer(nn.Module):
         Whs = torch.matmul(h, self.Ws) 
         Wht = torch.matmul(h, self.Wt) 
 
-        # e = self._prepare_attentional_mechanism_input(Whs, Wht)
-        # kronecker product ?
         # e.shape: [B, N, N]
         WhtT = torch.transpose(Wht, dim0=-2, dim1=-1)
         e = torch.matmul(Whs, WhtT)
-
-        
 
         # zij = eij if j --> i
         # zij = epsilon otherwise, -9e15
         zero_vec = -9e15 * torch.ones_like(e)
         z = torch.where(adj > 0, e, zero_vec)
-        # Must stack along BATCH?
         alpha = F.softmax(z, dim=-1)
-        # This last pass is fishy.
 
         Whc = torch.matmul(h, self.Wc)
         h_prime = torch.matmul(alpha, Whc)

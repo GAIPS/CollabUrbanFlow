@@ -218,7 +218,7 @@ class GATWLightning(pl.LightningModule):
         self.num_intersections = len(self.env.tl_ids)
 
         # Define GAT's parameters
-        n_heads = 1
+        n_heads = 5
 
         self.net = GATW(
             self.obs_size,
@@ -408,9 +408,10 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
     state_dict = torch.load(chkpt_path / f'GATW.chkpt')
     n_embeddings, in_features = state_dict['embeddings.weight'].shape
     _, n_hidden = state_dict['attention_0.Ws'].shape
-    out_features = state_dict['prediction.weight'].shape[0]
+    out_features, _ = state_dict['prediction.weight'].shape
+    n_heads = len([k for k in state_dict if 'Ws' in k and 'attention' in k])
     net = GATW(in_features=in_features, n_embeddings=n_embeddings,
-               n_hidden=n_hidden, out_features=out_features, n_heads=1)
+               n_hidden=n_hidden, out_features=out_features, n_heads=n_heads)
     net.load_state_dict(state_dict)
     agent = Agent(env)
     return agent, net
