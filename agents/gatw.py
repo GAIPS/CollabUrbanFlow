@@ -406,9 +406,11 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
     # TODO: dropout, alpha, n_heads ?
     state_dict = torch.load(chkpt_path / f'GATW.chkpt')
-    in_features, n_hidden = state_dict['attention_0.W'].shape
-    out_features = state_dict['out_att.W'].shape[-1]
-    net = GATV(in_features=in_features, n_hidden=n_hidden, n_classes=out_features, n_heads=5)
+    n_embeddings, in_features = state_dict['embeddings.weight'].shape
+    _, n_hidden = state_dict['attention_0.Ws'].shape
+    out_features = state_dict['prediction.weight'].shape[0]
+    net = GATW(in_features=in_features, n_embeddings=n_embeddings,
+               n_hidden=n_hidden, out_features=out_features, n_heads=1)
     net.load_state_dict(state_dict)
     agent = Agent(env)
     return agent, net

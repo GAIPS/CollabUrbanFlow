@@ -11,7 +11,7 @@ def load_agent(env, agent_type, chkpt_dir_path, chkpt_num, rollout_time, network
     if agent_type == 'MARLIN': return MARLIN.load_checkpoint(chkpt_dir_path, chkpt_num), None
     if agent_type == 'DQN': return dqn.load_checkpoint(env, chkpt_dir_path, rollout_time, network)
     if agent_type == 'GATV': return gatv.load_checkpoint(env, chkpt_dir_path, rollout_time, network)
-    if agent_type == 'GATW': return gatW.load_checkpoint(env, chkpt_dir_path, rollout_time, network)
+    if agent_type == 'GATW': return gatw.load_checkpoint(env, chkpt_dir_path, rollout_time, network)
     raise ValueError(f'{agent_type} not defined.')
 
 def get_agent(agent_type, env, epsilon_init, epsilon_final, epsilon_timesteps):
