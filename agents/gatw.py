@@ -6,8 +6,7 @@
     ---------
     * Parameter Sharing: att, W.
     * Centralized Training: Decentralized Execution.
-    * Learning to communicate: Sends message to agents.
-
+    * Learning to communicate: Sends message to agents. 
     To run a template:
     1) set agent_type = GATV
     >>> python models/train.py
@@ -30,7 +29,6 @@ import argparse
 from pathlib import Path
 from collections import OrderedDict
 from functools import cached_property
-
 from tqdm.auto import trange
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -64,7 +62,6 @@ def get_adjacency_matrix(env):
 
     data = np.ones(len(edge_list), dtype=int)
     adj = csr_matrix((data, zip(*edge_list)), dtype=int).todense()
-    # adj = Variable(torch.tensor(adj))
     return adj
 
 # Should this agent be general?
@@ -90,14 +87,19 @@ class Agent:
 
         self.env = env
         self.replay_buffer = replay_buffer
+
         self.reset()
+
+    @cached_property
+    def adjacency_matrix(self):
+        return get_adjacency_matrix(self.env)
 
     def reset(self):
         """Resets the environment and updates the state."""
         # Assumption: All intersections have the same phase.
         self.state = list(flatten(self.env.reset().values()))
 
-    def act(self, net, adj, epsilon, device):
+    def act(self, net, epsilon, device, adj):
         """For a given network, decide what action to carry out
             using an epsilon-greedy policy.
 
@@ -115,24 +117,28 @@ class Agent:
         actions = {}
         N = len(self.env.tl_ids)
 
-        state = torch.tensor([self.state]).reshape((N, -1))
+        state = torch.tensor([self.state]).reshape((N, -1)).to(device)
 
-        if device not in ["cpu"]:
-            state = state.cuda(device)
+        # if device not in ["cpu"]:
+        #     state = state.cuda(device)
 
         q_values = net(state, adj)
 
         # Exploration & Exploitation:
         # XOR operation flips correctly
         # TODO: verify flip
-        actions = torch.argmax(q_values, dim=1).numpy()
-        flip = np.random.random(N)
-        actions = np.logical_xor(actions.astype(bool), flip < epsilon)
-        actions = dict(zip(self.env.tl_ids, actions.astype(int).tolist()))
+        # actions = torch.argmax(q_values, dim=1).numpy()
+        # flip = np.random.random(N)
+        # actions = np.logical_xor(actions.astype(bool), flip < epsilon)
+        with torch.no_grad():
+            actions = torch.argmax(q_values, dim=1)
+            flip = torch.rand((N,)).to(device) < epsilon
+            actions = actions.type(torch.bool).bitwise_xor(flip)
+            actions = dict(zip(self.env.tl_ids, actions.cpu().numpy().astype(int).tolist()))
         return actions
 
     @torch.no_grad()
-    def play_step(self, net, adj, epsilon=0.0, device="cpu"):
+    def play_step(self, net, epsilon=0.0, device="cpu", adj=None):
         """Carries out a single interaction step between the agent
         and the environment.
 
@@ -152,7 +158,8 @@ class Agent:
         * done: bool
         if the episode is over
         """
-        actions = self.act(net, adj, epsilon, device)
+        if adj is None: adj = torch.tensor(self.adjacency_matrix).to(device)
+        actions = self.act(net, epsilon, device, adj)
 
         # do step in the environment -- 10s
         for _ in range(10):
@@ -187,12 +194,12 @@ class GATWLightning(pl.LightningModule):
                                save_agent_interval, chkpt_dir, seed)
     """
 
-    def __init__(self, env, replay_size=200, warm_start_steps=0,
+    def __init__(self, env, device, replay_size=200, warm_start_steps=0,
                  gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
                  sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
-                 save_path=None, **kwargs,
-                 ):
-        super().__init__(**kwargs)
+                 save_path=None, **kwargs):
+
+        super(GATWLightning, self).__init__(**kwargs)
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
@@ -220,21 +227,20 @@ class GATWLightning(pl.LightningModule):
             self.hidden_size,
             self.num_actions,
             n_heads
-        )
+        ).to(device)
         self.target_net = GATW(
             self.obs_size,
             self.embeddings,
             self.hidden_size,
             self.num_actions,
             n_heads
-        )
+        ).to(device)
 
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
         self.total_reward = 0
         self.episode_reward = 0
         self._total_timestep = 0
-        self.cum_loss = 0
         if self.warm_start_steps > 0: self.populate(self.warm_start_steps)
         self.save_path = save_path
 
@@ -248,8 +254,8 @@ class GATWLightning(pl.LightningModule):
 
     @cached_property
     def adjacency_matrix(self):
-        adj = get_adjacency_matrix(self.env)
-        return torch.tensor(adj).to(self.device)
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        return torch.tensor(self.agent.adjacency_matrix).to(device)
 
     def populate(self, steps=1000):
         """Carries out several random steps through the
@@ -260,9 +266,9 @@ class GATWLightning(pl.LightningModule):
         -----------
         * steps: number of random steps to populate the buffer with
         """
-        adj = self.adjacency_matrix
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         for i in range(steps):
-            self.agent.play_step(self.net, adj, epsilon=1.0)
+            self.agent.play_step(self.net, epsilon=1.0, device=device, adj=self.adjacency_matrix)
         self.agent.reset()
 
     def forward(self, x):
@@ -295,19 +301,18 @@ class GATWLightning(pl.LightningModule):
         --------
         * loss: torch.tensor([B, N * obs_size])
         """
-        adj = self.adjacency_matrix
+        device = self.get_device(batch)
         states, actions, rewards, dones, next_states = batch
 
-
         x = states.view((-1, self.num_intersections, self.obs_size))
-        x = x.type(torch.FloatTensor)
+        x = x.type(torch.FloatTensor).to(device)
         q_values = self.forward(x)
         state_action_values = q_values.gather(1, actions.unsqueeze(-1)).squeeze(-1)
 
 
         with torch.no_grad():
             y = states.view((-1, self.num_intersections, self.obs_size))
-            y = y.type(torch.FloatTensor)
+            y = y.type(torch.FloatTensor).to(device)
 
 
             adj = self.adjacency_matrix.repeat(y.shape[0], 1, 1)
@@ -340,16 +345,14 @@ class GATWLightning(pl.LightningModule):
                       (self.total_timestep + 1) / self.epsilon_timesteps)
 
         # step through environment with agent
-        reward, done = self.agent.play_step(self.net, adj, epsilon, device)
+        reward, done = self.agent.play_step(self.net, epsilon, device, adj)
         self.episode_reward += sum(reward) * 0.001
 
         loss = self.dqn_mse_loss(batch)
-        self.cum_loss += loss.clone().detach().numpy()
         if done:
             self.total_reward = self.episode_reward
             self.episode_reward = 0
             self._total_timestep += self.episode_timesteps
-            self.cum_loss = 0
             if self.save_path is not None:
                 self.save_checkpoint(self.save_path, self.total_timestep)
             print('')  # Skip an output line

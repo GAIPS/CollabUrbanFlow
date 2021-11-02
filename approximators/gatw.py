@@ -20,7 +20,6 @@ class GATW(nn.Module):
         """Dense version of GAT."""
         super(GATW, self).__init__()
         self.n_heads = n_heads
-        
 
         self.embeddings = nn.Linear(in_features, n_embeddings)
 
@@ -86,8 +85,8 @@ class GraphAttentionLayer(nn.Module):
         # h.shape: [B, N, E],
         # adj.shape: [N, N] 
         # Whx.shape: [B, N, H]
-        Whs = torch.matmul(h, self.Ws) 
-        Wht = torch.matmul(h, self.Wt) 
+        Whs = torch.matmul(h, self.Ws)
+        Wht = torch.matmul(h, self.Wt)
 
         # e.shape: [B, N, N]
         WhtT = torch.transpose(Wht, dim0=-2, dim1=-1)

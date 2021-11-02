@@ -24,6 +24,7 @@ def get_agent(agent_type, env, epsilon_init, epsilon_final, epsilon_timesteps):
                       epsilon_final, epsilon_timesteps, network)
     if agent_type in ('DQN', 'GATV', 'GATW'):
         # TODO: Place here the episode_timesteps
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         hparams = { 
             'batch_size': 1000,
             'lr': 5e-3, 
@@ -34,12 +35,13 @@ def get_agent(agent_type, env, epsilon_init, epsilon_final, epsilon_timesteps):
             'epsilon_init':epsilon_init,
             'epsilon_final':epsilon_final,
             'epsilon_timesteps':epsilon_timesteps,
+            'device': device,
         }
-        if agent_type == 'GATV': 
+        if agent_type == 'GATV':
             model = gatv.GATVLightning
-        elif agent_type == 'GATW': 
+        elif agent_type == 'GATW':
             model = gatw.GATWLightning
         elif agent_type == 'DQN':
             model = dqn.DQNLightning
-        return model(env, **hparams)
+        return model(env, **hparams).to(device)
     raise ValueError(f'{agent_type} not defined.')
