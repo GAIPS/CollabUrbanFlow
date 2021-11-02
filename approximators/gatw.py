@@ -11,40 +11,66 @@ import torch
 import torch.nn.functional as F
 
 class GATW(nn.Module):
-    def __init__(self,
-            in_features=4,
-            n_embeddings=8,
-            n_hidden=16,
-            out_features=2,
-            n_heads=1):
+    def __init__(self, in_features=4, n_embeddings=8, n_hidden=16,
+                out_features=2, n_heads=1, n_layers=1):
         """Dense version of GAT."""
         super(GATW, self).__init__()
         self.n_heads = n_heads
-        
+        self.n_layers = n_layers
+
+
 
         self.embeddings = nn.Linear(in_features, n_embeddings)
 
-        self.attentions = [GraphAttentionLayer(n_embeddings, n_hidden, n_hidden) for _ in range(n_heads)]
-        for i, attention in enumerate(self.attentions):
-            self.add_module(f'attention_{i}', attention)
+        self.attentions = []
+        self.heads = []
+        for j in range(n_layers):
+            self.attentions.append([
+                GraphAttentionLayer(n_embeddings, n_hidden, n_hidden) for _ in range(n_heads)
+            ])
+            for i, attention in enumerate(self.attentions[j]):
+                self.add_module(f'attention_{i}{j}', attention)
 
-        self.heads = nn.Linear(n_hidden, n_hidden)
+
+            self.heads.append(nn.Linear(n_hidden, n_hidden))
+            self.add_module(f'heads_{j}', self.heads[-1])
 
         self.prediction = nn.Linear(n_hidden, out_features)
+
+
+        self.hparameters = {
+            'hparams.in_features': in_features,
+            'hparams.n_embeddings':n_embeddings,
+            'hparams.n_hidden': n_hidden,
+            'hparams.out_features': out_features,
+            'hparams.n_heads': n_heads, 
+            'hparams.n_layers':n_layers
+        }
+
+    def state_dict(self):
+        state_dict = super(GATW, self).state_dict()
+        state_dict.update(self.get_extra_state())
+        return state_dict
+
+    def get_extra_state(self):
+        return self.hparameters
 
     def forward(self, x, adj):
         # 1) Converts features to embeddings.
         x = self.embeddings(x)
 
         # TODO: Repeat 2-3-4 for multiple layers.
-        # 2) Run n_heads attention mechanisms.
-        x = torch.stack([att(x, adj) for att in self.attentions])
+        for j in range(self.n_layers):
 
-        # 3) Average the stacked heads (dim=0)
-        x = torch.sum(x, dim=0) * (1 / self.n_heads)
+            # 2) Run n_heads attention mechanisms.
+            x = torch.stack([att(x, adj) for att in self.attentions[j]])
 
-        # 4) Apply a non-linear activation
-        x = F.relu(self.heads(x))
+            # 3) Average the stacked heads (dim=0)
+            x = torch.sum(x, dim=0) * (1 / self.n_heads)
+
+            # 4) Apply a non-linear activation
+            head = self.heads[j]
+            x = F.relu(head(x))
 
         # 5) Predicion layer  
         x = self.prediction(x)

@@ -359,7 +359,7 @@ class GATWLightning(pl.LightningModule):
 
         # Soft update of target network
         if self.timestep % self.sync_rate == 0:
-            self.target_net.load_state_dict(self.net.state_dict())
+            self.target_net.load_state_dict(self.net.state_dict(), strict=False)
 
         log = {
             "steps": torch.tensor(self.timestep).to(device),
@@ -406,12 +406,21 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
     # TODO: dropout, alpha, n_heads ?
     state_dict = torch.load(chkpt_path / f'GATW.chkpt')
-    n_embeddings, in_features = state_dict['embeddings.weight'].shape
-    _, n_hidden = state_dict['attention_0.Ws'].shape
-    out_features, _ = state_dict['prediction.weight'].shape
-    n_heads = len([k for k in state_dict if 'Ws' in k and 'attention' in k])
+    # n_embeddings, in_features = state_dict['embeddings.weight'].shape
+    # _, n_hidden = state_dict['attention_00.Ws'].shape
+    # out_features, _ = state_dict['prediction.weight'].shape
+    # n_layers = len([k for k in state_dict if 'head' in k])
+    # n_heads = len([k for k in state_dict if 'Ws' in k and 'attention' in k])
+    in_features = state_dict['hparams.in_features']
+    n_embeddings = state_dict['hparams.n_embeddings']
+    n_hidden = state_dict['hparams.n_hidden']
+    out_features = state_dict['hparams.out_features']
+    n_heads = state_dict['hparams.n_heads']
+    n_layers = state_dict['hparams.n_layers']
+
     net = GATW(in_features=in_features, n_embeddings=n_embeddings,
-               n_hidden=n_hidden, out_features=out_features, n_heads=n_heads)
-    net.load_state_dict(state_dict)
+               n_hidden=n_hidden, out_features=out_features,
+               n_heads=n_heads, n_layers=n_layers)
+    net.load_state_dict(state_dict, strict=False)
     agent = Agent(env)
     return agent, net
