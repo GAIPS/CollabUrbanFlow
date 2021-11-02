@@ -6,8 +6,8 @@
     ---------
     * Parameter Sharing: att, W.
     * Centralized Training: Decentralized Execution.
-    * Learning to communicate: Sends message to agents. 
-    
+    * Learning to communicate: Sends message to agents.
+
     To run a template:
     1) set agent_type = GATV
     >>> python models/train.py
@@ -29,6 +29,7 @@
 import argparse
 from pathlib import Path
 from collections import OrderedDict
+from functools import cached_property
 
 from tqdm.auto import trange
 import numpy as np
@@ -58,12 +59,12 @@ RUN_CONFIG_PATH = 'config/run.config'
 
 def simple_hash(x): return hash(x) % (11 * 255)
 
-def get_adjacency_matrix(edge_list):
-    num_nodes = max(edge_list, key=lambda x: max(x))
+def get_adjacency_matrix(env):
+    edge_list, _ = get_neighbors(env.incoming_roadlinks, env.outgoing_roadlinks)
 
     data = np.ones(len(edge_list), dtype=int)
     adj = csr_matrix((data, zip(*edge_list)), dtype=int).todense()
-    adj = Variable(torch.tensor(adj))
+    # adj = Variable(torch.tensor(adj))
     return adj
 
 # Should this agent be general?
@@ -89,21 +90,14 @@ class Agent:
 
         self.env = env
         self.replay_buffer = replay_buffer
-
-        edge_list, _ = get_neighbors(env.incoming_roadlinks, env.outgoing_roadlinks)
-        self._adjacency_matrix = get_adjacency_matrix(edge_list)
         self.reset()
-
-    @property
-    def adjacency_matrix(self):
-        return self._adjacency_matrix
 
     def reset(self):
         """Resets the environment and updates the state."""
         # Assumption: All intersections have the same phase.
         self.state = list(flatten(self.env.reset().values()))
 
-    def act(self, net, epsilon, device):
+    def act(self, net, adj, epsilon, device):
         """For a given network, decide what action to carry out
             using an epsilon-greedy policy.
 
@@ -126,7 +120,7 @@ class Agent:
         if device not in ["cpu"]:
             state = state.cuda(device)
 
-        q_values = net(state, self.adjacency_matrix)
+        q_values = net(state, adj)
 
         # Exploration & Exploitation:
         # XOR operation flips correctly
@@ -138,7 +132,7 @@ class Agent:
         return actions
 
     @torch.no_grad()
-    def play_step(self, net, epsilon=0.0, device="cpu"):
+    def play_step(self, net, adj, epsilon=0.0, device="cpu"):
         """Carries out a single interaction step between the agent
         and the environment.
 
@@ -158,7 +152,7 @@ class Agent:
         * done: bool
         if the episode is over
         """
-        actions = self.act(net, epsilon, device)
+        actions = self.act(net, adj, epsilon, device)
 
         # do step in the environment -- 10s
         for _ in range(10):
@@ -226,7 +220,7 @@ class GATWLightning(pl.LightningModule):
             self.hidden_size,
             self.num_actions,
             n_heads
-        ) 
+        )
         self.target_net = GATW(
             self.obs_size,
             self.embeddings,
@@ -252,9 +246,10 @@ class GATWLightning(pl.LightningModule):
     def total_timestep(self):
         return self._total_timestep + self.timestep
 
-    @property
+    @cached_property
     def adjacency_matrix(self):
-        return self.agent.adjacency_matrix
+        adj = get_adjacency_matrix(self.env)
+        return torch.tensor(adj).to(self.device)
 
     def populate(self, steps=1000):
         """Carries out several random steps through the
@@ -265,8 +260,9 @@ class GATWLightning(pl.LightningModule):
         -----------
         * steps: number of random steps to populate the buffer with
         """
+        adj = self.adjacency_matrix
         for i in range(steps):
-            self.agent.play_step(self.net, epsilon=1.0)
+            self.agent.play_step(self.net, adj, epsilon=1.0)
         self.agent.reset()
 
     def forward(self, x):
@@ -299,6 +295,7 @@ class GATWLightning(pl.LightningModule):
         --------
         * loss: torch.tensor([B, N * obs_size])
         """
+        adj = self.adjacency_matrix
         states, actions, rewards, dones, next_states = batch
 
 
@@ -322,7 +319,7 @@ class GATWLightning(pl.LightningModule):
 
         expected_state_action_values = next_state_values * self.gamma + rewards
         loss = nn.MSELoss()(state_action_values, expected_state_action_values)
-        return loss 
+        return loss
 
     def training_step(self, batch, nb_batch):
         """Carries out a single step through the environment to update
@@ -337,13 +334,13 @@ class GATWLightning(pl.LightningModule):
         Batch number
         """
         device = self.get_device(batch)
+        adj = self.adjacency_matrix
         epsilon = max(self.epsilon_final,
                       self.epsilon_init - \
                       (self.total_timestep + 1) / self.epsilon_timesteps)
 
-        
         # step through environment with agent
-        reward, done = self.agent.play_step(self.net, epsilon, device)
+        reward, done = self.agent.play_step(self.net, adj, epsilon, device)
         self.episode_reward += sum(reward) * 0.001
 
         loss = self.dqn_mse_loss(batch)
