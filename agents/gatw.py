@@ -6,8 +6,8 @@
     ---------
     * Parameter Sharing: att, W.
     * Centralized Training: Decentralized Execution.
-    * Learning to communicate: Sends message to agents. 
-    
+    * Learning to communicate: Sends message to agents.
+
     To run a template:
     1) set agent_type = GATV
     >>> python models/train.py
@@ -213,26 +213,29 @@ class GATWLightning(pl.LightningModule):
         self.env = env
         self.obs_size = 4
         self.embeddings = 8
-        self.hidden_size = 16
+        self.hidden_size = 4
         self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
 
         # Define GAT's parameters
         n_heads = 5
+        n_layers = 2
 
         self.net = GATW(
             self.obs_size,
             self.embeddings,
             self.hidden_size,
             self.num_actions,
-            n_heads
+            n_heads,
+            n_layers
         ) 
         self.target_net = GATW(
             self.obs_size,
             self.embeddings,
             self.hidden_size,
             self.num_actions,
-            n_heads
+            n_heads,
+            n_layers
         )
 
         self.buffer = ReplayBuffer(self.replay_size)
