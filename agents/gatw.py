@@ -219,7 +219,7 @@ class GATWLightning(pl.LightningModule):
 
         # Define GAT's parameters
         n_heads = 5
-        n_layers = 2
+        n_layers = 3
 
         self.net = GATW(
             self.obs_size,
