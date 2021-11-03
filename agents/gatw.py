@@ -9,7 +9,7 @@
     * Learning to communicate: Sends message to agents.
 
     To run a template:
-    1) set agent_type = GATV
+    1) set agent_type = GATW
     >>> python models/train.py
     >>> tensorboard --logdir lightning_logs
 
@@ -214,8 +214,8 @@ class GATWLightning(pl.LightningModule):
         self.num_intersections = len(self.env.tl_ids)
 
         # Define GAT's parameters
-        n_heads = 5
-        n_layers = 2
+        n_heads = 10
+        n_layers = 1
 
         self.net = GATW(
             self.obs_size,
@@ -402,7 +402,6 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
-    # TODO: dropout, alpha, n_heads ?
     state_dict = torch.load(chkpt_path / f'GATW.chkpt')
     in_features = state_dict['hparams.in_features']
     n_embeddings = state_dict['hparams.n_embeddings']
