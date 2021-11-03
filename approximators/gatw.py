@@ -114,8 +114,8 @@ class GraphAttentionLayer(nn.Module):
         # h.shape: [B, N, E],
         # adj.shape: [N, N] 
         # Whx.shape: [B, N, H]
-        Whs = torch.matmul(h, self.Ws) 
-        Wht = torch.matmul(h, self.Wt) 
+        Whs = torch.matmul(h, self.Ws)
+        Wht = torch.matmul(h, self.Wt)
 
         # e.shape: [B, N, N]
         WhtT = torch.transpose(Wht, dim0=-2, dim1=-1)

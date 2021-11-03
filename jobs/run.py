@@ -13,7 +13,7 @@ import os
 import shutil
 from pathlib import Path
 import sys
-  
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 # append the path of the
 # parent directory
 sys.path.append(Path.cwd().as_posix())
