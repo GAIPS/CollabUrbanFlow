@@ -28,10 +28,17 @@ def train_loop(env, model, experiment_time, save_agent_interval, chkpt_dir, seed
     max_trainer_steps = experiment_time /10
     model.episode_timesteps = save_agent_interval
 
+    # kwargs = {
+    #     'max_steps':max_trainer_steps,
+    #     'log_every_n_steps':100,
+    #     'val_check_interval':100
+    # }
+    # if torch.cuda.is_available(): kwargs['on_gpu'] = 1
     trainer = Trainer(
         max_steps=max_trainer_steps,
         log_every_n_steps=100,
-        val_check_interval=100
+        val_check_interval=100,
+        gpus= int(torch.cuda.is_available())
     )
     trainer.fit(model)
 
