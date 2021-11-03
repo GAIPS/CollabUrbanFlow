@@ -25,8 +25,10 @@ class GATW(nn.Module):
         self.attentions = []
         self.heads = []
         for j in range(n_layers):
+            # first layer has different size
+            n_input = n_hidden if j > 0 else n_embeddings
             self.attentions.append([
-                GraphAttentionLayer(n_embeddings, n_hidden, n_hidden) for _ in range(n_heads)
+                GraphAttentionLayer(n_input, n_hidden, n_hidden) for _ in range(n_heads)
             ])
             for i, attention in enumerate(self.attentions[j]):
                 self.add_module(f'attention_{i}{j}', attention)
