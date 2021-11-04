@@ -21,8 +21,8 @@ print(sys.path)
 
 from jobs.train import train_batch as train
 from jobs.rollouts import rollout_batch as rollouts
-from plots.train_plots import main as train_plots
-from plots.test_plots import main as test_plots
+from analysis.train_plots import main as train_plots
+from analysis.test_plots import main as test_plots
 
 if __name__ == '__main__':
     # 1) Train agent(s).

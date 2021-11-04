@@ -29,7 +29,7 @@ import sys
 sys.path.append(Path.cwd().as_posix())
 from models.baselines  import main as baseline
 from jobs.rollouts import concat
-from plots.test_plots import main as test_plots 
+from analysis.test_plots import main as test_plots 
 
 mp = multiprocessing.get_context('spawn')
 

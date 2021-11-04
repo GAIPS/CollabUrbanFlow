@@ -37,8 +37,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from utils.file_io import parse_train_config, \
     expr_logs_dump, expr_path_create, \
     expr_path_test_target
-from plots.train_plots import main as train_plots
-from plots.test_plots import main as test_plots
 from utils.utils import concat, flatten
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.mlp import MLP

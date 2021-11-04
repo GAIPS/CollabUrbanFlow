@@ -61,7 +61,7 @@ class GATW(nn.Module):
         # 1) Converts features to embeddings.
         x = self.embeddings(x)
 
-        # TODO: Repeat 2-3-4 for multiple layers.
+        # Repeat 2-3-4 for multiple layers.
         for j in range(self.n_layers):
 
             # 2) Run n_heads attention mechanisms.
@@ -113,12 +113,14 @@ class GraphAttentionLayer(nn.Module):
     def forward(self, h, adj):
         # h.shape: [B, N, E],
         # adj.shape: [N, N] 
-        # Whx.shape: [B, N, H]
+        # Whx.shape: [B, N, H], x in (s, t)
         Whs = torch.matmul(h, self.Ws)
         Wht = torch.matmul(h, self.Wt)
 
-        # e.shape: [B, N, N]
+        # WhtT.shape: [B, H, N]
         WhtT = torch.transpose(Wht, dim0=-2, dim1=-1)
+
+        # e.shape: [B, N, N]
         e = torch.matmul(Whs, WhtT)
 
         # zij = eij if j --> i
