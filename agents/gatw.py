@@ -20,10 +20,9 @@
 
     References:
     -----------
-    Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero,
-    Pietro Lio, and Yoshua Bengio. 2017.
     `Graph attention networks. 2017`
     https://arxiv.org/abs/1710.10903
+    Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Lio, and Yoshua Bengio. 2017.
     https://github.com/Diego999/pyGAT/blob/master/train.py
 """
 import argparse
@@ -62,8 +61,12 @@ def get_adjacency_matrix(env):
     edge_list, _ = get_neighbors(env.incoming_roadlinks, env.outgoing_roadlinks)
 
     data = np.ones(len(edge_list), dtype=int)
-    adj = csr_matrix((data, zip(*edge_list)), dtype=int).todense()
-    return adj
+    # incidence: (i, j): i --> j
+    incidence = csr_matrix((data, zip(*edge_list)), dtype=int).todense()
+    # adjacency to be the `reverse` of `incidence`.
+    # j --> i
+    source = incidence.T
+    return source
 
 # Should this agent be general?
 # Or, should function approximation be associated to agnt
@@ -214,7 +217,7 @@ class GATWLightning(pl.LightningModule):
         self.num_intersections = len(self.env.tl_ids)
 
         # Define GAT's parameters
-        n_heads = 10
+        n_heads = 5
         n_layers = 1
 
         self.net = GATW(

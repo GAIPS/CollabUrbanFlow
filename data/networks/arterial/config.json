@@ -3,6 +3,8 @@
   "dir": "data/networks/arterial/",
   "seed": 0,
   "roadnetFile": "roadnet.json",
+  "roadnetLogFile": "roadnetLog.json",
+  "replayLogFile": "replay.txt",
   "flowFile": "flow.json",
   "rlTrafficLight": true,
   "saveReplay": false
