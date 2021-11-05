@@ -71,18 +71,29 @@ def main():
     df_metrics = pd.read_csv(tarfile.open(args.experiment_root_folder).extractfile(
                             f'{exp_name}/plots/test/{exp_name}_metrics.csv'))
 
-
+    folder_names = []
     if tls_type == 'rl':
-        df_metrics = df_metrics.groupby(['train_run']).mean()
+        def fn(x): return x.split('/')[-1] == 'eval'
+        def gn(x): return '/'.join(x.split('/')[:-1])
+        # consolidating grab original evaluation names
+        folder_names = sorted([gn(name) for name in all_names if fn(name)])
+        # df_metrics = df_metrics.groupby(['train_run']).mean()
 
     top_k = df_metrics.nsmallest(args.num_samples, 'travel_time')
-    top_k_mean = top_k.mean()
+    top_k_mean = top_k.mean(numeric_only=True)
 
     print(f'Top-{args.num_samples} policies (w.r.t. travel_time):')
-    print('-'*30)
+    print('-'*36)
     print(f'Speed: {top_k_mean["speed"]}')
     print(f'Waiting time: {top_k_mean["waiting_time"]}')
     print(f'Travel time: {top_k_mean["travel_time"]}')
+    if any(folder_names):
+        print('')
+        print(f'Top-{args.num_samples} Experiments:')
+        print('-'*20)
+        for i in top_k.index:
+            print(f'{folder_names[i]}')
+    
 
 if __name__ == "__main__":
     main()
