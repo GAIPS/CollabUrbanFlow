@@ -46,7 +46,7 @@ from utils.file_io import parse_train_config, \
     expr_logs_dump, expr_path_create, \
     expr_path_test_target
 from utils.utils import concat, flatten
-from utils.network import get_neighbors
+from utils.network import get_adjacency_from_env
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.gatw import GATW
 
@@ -54,17 +54,6 @@ TRAIN_CONFIG_PATH = 'config/train.config'
 RUN_CONFIG_PATH = 'config/run.config'
 
 def simple_hash(x): return hash(x) % (11 * 255)
-
-def get_adjacency_matrix(env):
-    edge_list, _ = get_neighbors(env.incoming_roadlinks, env.outgoing_roadlinks)
-
-    data = np.ones(len(edge_list), dtype=int)
-    # incidence: (i, j): i --> j
-    incidence = csr_matrix((data, zip(*edge_list)), dtype=int).todense()
-    # adjacency to be the `reverse` of `incidence`.
-    # j --> i
-    source = incidence.T
-    return source
 
 # Should this agent be general?
 # Or, should function approximation be associated to agnt
@@ -94,7 +83,7 @@ class Agent:
 
     @cached_property
     def adjacency_matrix(self):
-        return get_adjacency_matrix(self.env)
+        return get_adjacency_from_env(self.env)
 
     def reset(self):
         """Resets the environment and updates the state."""

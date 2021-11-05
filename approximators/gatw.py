@@ -17,9 +17,6 @@ class GATW(nn.Module):
         super(GATW, self).__init__()
         self.n_heads = n_heads
         self.n_layers = n_layers
-
-
-
         self.embeddings = nn.Linear(in_features, n_embeddings)
 
         self.attentions = []

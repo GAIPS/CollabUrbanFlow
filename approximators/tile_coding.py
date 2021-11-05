@@ -40,6 +40,7 @@ class TileCodingApproximator(object):
         self.min_green = min_green
         self.max_green = max_green
 
+        # TODO: import from utils.network
         # Flows determine the min. length of the vehicles.
         # min. length --> generates the maximum capacity.
         vehlen = min([flow['vehicle']['length'] for flow in flows])

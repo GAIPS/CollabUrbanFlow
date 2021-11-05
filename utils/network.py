@@ -4,8 +4,10 @@
     ----------
     * https://cityflow.readthedocs.io/en/latest/roadnet.html
 """
-
+import numpy as np
+from scipy.sparse import csr_matrix
 from utils.utils import flatten
+from utils import points2length
 
 def get_phases(roadnet):
     """ Forms a traffic light phase
@@ -135,6 +137,60 @@ def get_neighbors(incoming, outgoing):
     
     return edge_list, id_to_label
 
+def get_adjacency_from_roadnet(roadnet):
+    *args, _ = get_phases(roadnet)
+    return get_adjacency_from_roadlinks(*args)
+
+def get_adjacency_from_env(env):
+    args = (env.incoming_roadlinks, env.outgoing_roadlinks)
+    return get_adjacency_from_roadlinks(*args)
+
+def get_adjacency_from_roadlinks(incoming, outgoing):
+    edge_list, _ = get_neighbors(incoming, outgoing)
+    data = np.ones(len(edge_list), dtype=int)
+    # incidence: (i, j): i --> j
+    incidence = csr_matrix((data, zip(*edge_list)), dtype=int).todense()
+    # adjacency to be the `reverse` of `incidence`.
+    # j --> i
+    source = incidence.T
+    return source
+
+def get_capacity_from_roadnet(roadnet, flows=None):
+    """Capacity from each tl_ids"""
+
+    if flows is None:
+        vehlen, vehgap = 5, 2.5
+    else:
+        # Flows determine the min. length of the vehicles.
+        # min. length --> generates the maximum capacity.
+        vehlen = min([flow['vehicle']['length'] for flow in flows])
+        vehgap = min([flow['vehicle']['minGap'] for flow in flows])
+
+    capacities = {}
+    tl_ids = []
+    intersections = [intr for intr in roadnet['intersections'] if not intr['virtual']]
+    roads = roadnet['roads']
+    for intersection in intersections:
+        lightphases = intersection['trafficLight']['lightphases']
+        p = 0
+        tl_id = intersection['id']
+        phase_capacities = {}
+        for linkids in lightphases:
+            if len(linkids['availableRoadLinks']) > 0:
+                linkids = linkids['availableRoadLinks']
+                capacity = 0
+                for linkid in linkids:
+                    # startRoad should be the incoming links.
+                    edgeid = intersection['roadLinks'][linkid]['startRoad']
+                    capacity += sum([
+                        points2length(*road['points'])
+                        for road in roads if road['id'] == edgeid
+                    ])
+
+                phase_capacities[p] = int(capacity / (vehlen + vehgap))
+                p += 1
+        capacities[tl_id] = phase_capacities
+    return capacities 
 
 if __name__ == '__main__':
 
