@@ -209,7 +209,7 @@ class GATWLightning(pl.LightningModule):
         self.num_layers = 1
 
         self._timestep = 0
-        self.total_reward = 0
+        self._reward = 0
         self.save_path = save_path
 
         self.reset(device=device)
@@ -222,6 +222,11 @@ class GATWLightning(pl.LightningModule):
     def timestep(self):
         return self._timestep + self.episode_timestep
 
+
+    @property
+    def reward(self):
+        return self._reward
+
     @property
     def epsilon(self):
         epsilon = max(self.epsilon_final,
@@ -229,6 +234,7 @@ class GATWLightning(pl.LightningModule):
                       (self.timestep + 1) / self.epsilon_timesteps)
         return epsilon
 
+    
     @cached_property
     def adjacency_matrix(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -239,6 +245,7 @@ class GATWLightning(pl.LightningModule):
             state_dict = torch.load(self.save_path / str(self.timestep) / f'GATW.chkpt')
             self.net.load_state_dict(state_dict, strict=False)
             self.target_net.load_state_dict(state_dict, strict=False)
+            self.agent.reset()
         else:
             self.net = GATW(
                 self.obs_size,
@@ -257,10 +264,10 @@ class GATWLightning(pl.LightningModule):
                 self.num_layers
             ).to(device)
 
-        self.buffer = ReplayBuffer(self.replay_size)
-        self.agent = Agent(self.env, self.buffer)
+            self.buffer = ReplayBuffer(self.replay_size)
+            self.agent = Agent(self.env, self.buffer)
+            if self.warm_start_steps > 0: self.populate(device=device, steps=self.warm_start_steps)
         self.episode_reward = 0
-        if self.warm_start_steps > 0: self.populate(device=device, steps=self.warm_start_steps)
 
     def populate(self, device=None, steps=1000):
         """Carries out several random steps through the
@@ -357,9 +364,20 @@ class GATWLightning(pl.LightningModule):
         if self.episode_timestep % self.sync_rate == 0:
             self.target_net.load_state_dict(self.net.state_dict(), strict=False)
 
+        if done:
+            self.num_episodes += 1
+            # save and reset the network
+            # update log.
+            self._timestep += self.episode_timesteps
+            self._reward += self.episode_reward
+            if self.save_path is not None:
+                self.save_checkpoint(self.save_path, self.timestep)
+                self.reset()
+            print('')  # Skip an output line
+
         log = {
             "steps": torch.tensor(self.episode_timestep).to(device),
-            "reward": torch.tensor(self.episode_reward).to(device),
+            "reward": torch.tensor(self.reward).to(device),
             "epsilon": torch.tensor(np.round(self.epsilon, 4)).to(device),
         }
 
@@ -367,16 +385,6 @@ class GATWLightning(pl.LightningModule):
         for k, v in log.items():
             self.log(k, v, logger=True, prog_bar=True)
 
-        if done:
-            self.num_episodes += 1
-            # save and reset the network
-            # update log.
-            self.episode_reward = 0
-            self._timestep += self.episode_timesteps
-            if self.save_path is not None:
-                self.save_checkpoint(self.save_path, self.timestep)
-                self.reset()
-            print('')  # Skip an output line
 
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
