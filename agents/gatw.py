@@ -197,55 +197,72 @@ class GATWLightning(pl.LightningModule):
         self.batch_size = batch_size
 
         self.env = env
-        self.obs_size = 4
-        self.embeddings = 8
-        self.hidden_size = 4
-        self.num_actions = 2
         self.num_intersections = len(self.env.tl_ids)
+        self.num_episodes = 0
 
-        # Define GAT's parameters
-        n_heads = 5
-        n_layers = 1
+        # TODO: GATs hyperparams
+        self.obs_size = 4
+        self.num_embeddings = 8
+        self.hidden_size = 16
+        self.num_actions = 2
+        self.num_heads = 5
+        self.num_layers = 1
 
-        self.net = GATW(
-            self.obs_size,
-            self.embeddings,
-            self.hidden_size,
-            self.num_actions,
-            n_heads,
-            n_layers
-        ).to(device)
-        self.target_net = GATW(
-            self.obs_size,
-            self.embeddings,
-            self.hidden_size,
-            self.num_actions,
-            n_heads,
-            n_layers
-        ).to(device)
-
-        self.buffer = ReplayBuffer(self.replay_size)
-        self.agent = Agent(self.env, self.buffer)
+        self._timestep = 0
         self.total_reward = 0
-        self.episode_reward = 0
-        self._total_timestep = 0
-        if self.warm_start_steps > 0: self.populate(self.warm_start_steps)
         self.save_path = save_path
 
+        self.reset(device=device)
+
     @property
-    def timestep(self):
+    def episode_timestep(self):
         return self.agent.env.timestep
 
     @property
-    def total_timestep(self):
-        return self._total_timestep + self.timestep
+    def timestep(self):
+        return self._timestep + self.episode_timestep
+
+    @property
+    def epsilon(self):
+        epsilon = max(self.epsilon_final,
+                      self.epsilon_init - \
+                      (self.timestep + 1) / self.epsilon_timesteps)
+        return epsilon
 
     @cached_property
     def adjacency_matrix(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         return torch.tensor(self.agent.adjacency_matrix).to(device)
 
-    def populate(self, steps=1000):
+    def reset(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+        if self.num_episodes > 0:
+            state_dict = torch.load(self.save_path / str(self.timestep) / f'GATW.chkpt')
+            self.net.load_state_dict(state_dict, strict=False)
+            self.target_net.load_state_dict(state_dict, strict=False)
+        else:
+            self.net = GATW(
+                self.obs_size,
+                self.num_embeddings,
+                self.hidden_size,
+                self.num_actions,
+                self.num_heads,
+                self.num_layers
+            ).to(device)
+            self.target_net = GATW(
+                self.obs_size,
+                self.num_embeddings,
+                self.hidden_size,
+                self.num_actions,
+                self.num_heads,
+                self.num_layers
+            ).to(device)
+
+        self.buffer = ReplayBuffer(self.replay_size)
+        self.agent = Agent(self.env, self.buffer)
+        self.episode_reward = 0
+        if self.warm_start_steps > 0: self.populate(device=device, steps=self.warm_start_steps)
+
+    def populate(self, device=None, steps=1000):
         """Carries out several random steps through the
            environment to initially fill up the replay buffer with
            experiences.
@@ -254,9 +271,10 @@ class GATWLightning(pl.LightningModule):
         -----------
         * steps: number of random steps to populate the buffer with
         """
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if device is None:
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         for i in range(steps):
-            self.agent.play_step(self.net, epsilon=1.0, device=device, adj=self.adjacency_matrix)
+            self.agent.play_step(self.net, epsilon=self.epsilon, device=device, adj=self.adjacency_matrix)
         self.agent.reset()
 
     def forward(self, x):
@@ -277,7 +295,7 @@ class GATWLightning(pl.LightningModule):
         output = self.net(x, adj)
         return output
 
-    def dqn_mse_loss(self, batch):
+    def loss_step(self, batch):
         """Calculates the mse loss using a mini batch from the replay buffer.
 
         Parameters:
@@ -328,39 +346,37 @@ class GATWLightning(pl.LightningModule):
         """
         device = self.get_device(batch)
         adj = self.adjacency_matrix
-        epsilon = max(self.epsilon_final,
-                      self.epsilon_init - \
-                      (self.total_timestep + 1) / self.epsilon_timesteps)
 
         # step through environment with agent
-        reward, done = self.agent.play_step(self.net, epsilon, device, adj)
+        reward, done = self.agent.play_step(self.net, self.epsilon, device, adj)
         self.episode_reward += sum(reward) * 0.001
 
-        loss = self.dqn_mse_loss(batch)
-
-        if done:
-            # save and reset the network
-            # update log.
-            self.total_reward = self.episode_reward
-            self.episode_reward = 0
-            self._total_timestep += self.episode_timesteps
-            if self.save_path is not None:
-                self.save_checkpoint(self.save_path, self.total_timestep)
-            print('')  # Skip an output line
+        loss = self.loss_step(batch)
 
         # Soft update of target network
-        if self.timestep % self.sync_rate == 0:
+        if self.episode_timestep % self.sync_rate == 0:
             self.target_net.load_state_dict(self.net.state_dict(), strict=False)
 
         log = {
-            "steps": torch.tensor(self.timestep).to(device),
-            "reward": torch.tensor(self.total_reward).to(device),
-            "epsilon": torch.tensor(np.round(epsilon, 4)).to(device),
+            "steps": torch.tensor(self.episode_timestep).to(device),
+            "reward": torch.tensor(self.episode_reward).to(device),
+            "epsilon": torch.tensor(np.round(self.epsilon, 4)).to(device),
         }
 
         self.log('loss', loss.clone().detach().to(device), logger=True, prog_bar=True)
         for k, v in log.items():
             self.log(k, v, logger=True, prog_bar=True)
+
+        if done:
+            self.num_episodes += 1
+            # save and reset the network
+            # update log.
+            self.episode_reward = 0
+            self._timestep += self.episode_timesteps
+            if self.save_path is not None:
+                self.save_checkpoint(self.save_path, self.timestep)
+                self.reset()
+            print('')  # Skip an output line
 
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
@@ -383,13 +399,11 @@ class GATWLightning(pl.LightningModule):
 
     """ Serialization """
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
+        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'GATW.chkpt'
+        file_path.parent.mkdir(exist_ok=True)
+        torch.save(self.net.state_dict(), file_path)
 
-        for i, tl_id in enumerate(self.env.tl_ids):
-            file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'GATW.chkpt'
-            file_path.parent.mkdir(exist_ok=True)
-            torch.save(self.net.state_dict(), file_path)
-
-def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
+def load_checkpoint(env, chkpt_dir_path, rollout_time=None, network=None, chkpt_num=None):
     if chkpt_num == None:
         chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
     chkpt_path = chkpt_dir_path / str(chkpt_num)
@@ -397,15 +411,15 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
     state_dict = torch.load(chkpt_path / f'GATW.chkpt')
     in_features = state_dict['hparams.in_features']
-    n_embeddings = state_dict['hparams.n_embeddings']
+    num_embeddings = state_dict['hparams.num_embeddings']
     n_hidden = state_dict['hparams.n_hidden']
     out_features = state_dict['hparams.out_features']
-    n_heads = state_dict['hparams.n_heads']
-    n_layers = state_dict['hparams.n_layers']
+    num_heads = state_dict['hparams.num_heads']
+    num_layers = state_dict['hparams.num_layers']
 
-    net = GATW(in_features=in_features, n_embeddings=n_embeddings,
+    net = GATW(in_features=in_features, n_embeddings=num_embeddings,
                n_hidden=n_hidden, out_features=out_features,
-               n_heads=n_heads, n_layers=n_layers)
+               n_heads=num_heads, n_layers=num_layers)
     net.load_state_dict(state_dict, strict=False)
     agent = Agent(env)
     return agent, net
