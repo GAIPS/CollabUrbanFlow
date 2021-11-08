@@ -117,7 +117,7 @@ class Agent:
         # XOR operation flips correctly
         with torch.no_grad():
             actions = torch.argmax(q_values, dim=1)
-            flip = torch.rand((N,)).to(device) < epsilon
+            flip = torch.rand((N,)).to(device) < epsilon / 2
             actions = actions.type(torch.bool).bitwise_xor(flip)
             actions = dict(zip(self.env.tl_ids, actions.cpu().numpy().astype(int).tolist()))
         return actions
@@ -337,7 +337,10 @@ class GATWLightning(pl.LightningModule):
         self.episode_reward += sum(reward) * 0.001
 
         loss = self.dqn_mse_loss(batch)
+
         if done:
+            # save and reset the network
+            # update log.
             self.total_reward = self.episode_reward
             self.episode_reward = 0
             self._total_timestep += self.episode_timesteps
