@@ -108,7 +108,7 @@ def main(source_folder):
     target_path.mkdir(exist_ok=True)
     # FIXME: This is hard-coded but should
     # be the first parent.
-    subfolders = (str(source_path.parent), source_path.stem, 'headmaps')
+    subfolders = (str(source_path.parent), source_path.stem, 'heatmaps')
     for subfolder in subfolders:
         target_path = target_path / subfolder
         target_path.mkdir(exist_ok=True)
@@ -146,11 +146,12 @@ def main(source_folder):
     for tlnum, tlcap  in enumerate(capacities.items()):
         tlid, tlph = tlcap
         assert len(tlph) == 2
-        cx, cy = tuple(tlph.values())
+        # cx, cy = tuple(tlph.values())
 
         data = (states[:, tlnum, :], probs[:, tlnum, :])
         data = np.concatenate(data, axis=1)
         df = pd.DataFrame(data=data, columns=labels)  
+        cx, cy = df[['delay_0', 'delay_1']].max()
 
         fig, axes = plt.subplots(nrows=1, ncols=len(tlph))
         fig.suptitle(f'{AGENT_TYPE} {tlid}: Switch action')
