@@ -174,7 +174,7 @@ class DQNLightning(pl.LightningModule):
     )
     """
 
-    def __init__(self, env, replay_size=200, warm_start_steps=0,
+    def __init__(self, env, device='cpu', replay_size=200, warm_start_steps=0,
                  gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
                  sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs,
@@ -203,12 +203,12 @@ class DQNLightning(pl.LightningModule):
             self.obs_size,
             self.num_actions,
             self.hidden_size
-        ) for _ in range(self.num_intersections)]
+        ).to(device) for _ in range(self.num_intersections)]
         self.target_net = [MLP(
             self.obs_size,
             self.num_actions,
             self.hidden_size
-        ) for _ in range(self.num_intersections)]
+        ).to(device) for _ in range(self.num_intersections)]
 
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
@@ -379,7 +379,6 @@ class DQNLightning(pl.LightningModule):
 
 def load_checkpoint(env, chkpt_dir_path, rollout_time, network, chkpt_num=None):
 
-    
     if chkpt_num == None:
         chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
     chkpt_path = chkpt_dir_path / str(chkpt_num)

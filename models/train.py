@@ -66,7 +66,7 @@ def main(train_config_path=TRAIN_CONFIG_PATH):
                       epsilon_final, epsilon_timesteps)
 
     train_loop = get_loop(agent_type)
-    if agent_type in ('DQN', 'GATV', 'GATW'):
+    if agent_type in ('DQN', 'DQN2', 'GATV', 'GATW'):
         info_dict = train_loop(env, agent, experiment_time,
                                save_agent_interval, chkpt_dir, seed)
     else:
