@@ -348,7 +348,7 @@ class GATWLightning(pl.LightningModule):
             # save and reset the network
             # update log.
             self._timestep += self.episode_timesteps
-            self._reward += self.episode_reward
+            self._reward = self.episode_reward
             if self.save_path is not None:
                 self.save_checkpoint(self.save_path, self.timestep)
                 self.reset()
