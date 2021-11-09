@@ -150,15 +150,15 @@ class Agent:
         for _ in range(10):
             experience = self.env.step(actions)
 
-        new_state, reward, done, _ = experience
-        new_state, reward, actions = \
-            list(flatten(new_state.values())), list(reward.values()), list(actions.values())
+        next_state, reward, done, _ = experience
+        next_state, reward, actions = \
+            list(flatten(next_state.values())), list(reward.values()), list(actions.values())
         if epsilon > 0.0:
-            exp = Experience(self.state, actions, reward, done, new_state)
+            exp = Experience(self.state, actions, reward, done, next_state)
 
             self.replay_buffer.append(exp)
 
-        self.state = new_state
+        self.state = next_state
         if done:
             self.reset()
         return reward, done
@@ -311,9 +311,6 @@ class GATWLightning(pl.LightningModule):
 
         with torch.no_grad():
             next_state_values = self.target_net(next_states, adj).argmax(-1)
-
-            next_state_values[dones] = 0.0
-
             next_state_values = next_state_values.detach()
 
 
