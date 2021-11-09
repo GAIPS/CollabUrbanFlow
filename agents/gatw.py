@@ -419,11 +419,19 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time=None, network=None, chkpt_
 
     state_dict = torch.load(chkpt_path / f'GATW.chkpt')
     in_features = state_dict['hparams.in_features']
+<<<<<<< HEAD
     num_embeddings = state_dict['hparams.num_embeddings']
     n_hidden = state_dict['hparams.n_hidden']
     out_features = state_dict['hparams.out_features']
     num_heads = state_dict['hparams.num_heads']
     num_layers = state_dict['hparams.num_layers']
+=======
+    num_embeddings = state_dict['hparams.n_embeddings']
+    n_hidden = state_dict['hparams.n_hidden']
+    out_features = state_dict['hparams.out_features']
+    num_heads = state_dict['hparams.n_heads']
+    num_layers = state_dict['hparams.n_layers']
+>>>>>>> c6a475cc6092e0aae92ff04303bd24c4ee5e6ebe
 
     net = GATW(in_features=in_features, n_embeddings=num_embeddings,
                n_hidden=n_hidden, out_features=out_features,
