@@ -197,6 +197,7 @@ class GATWLightning(pl.LightningModule):
         self.batch_size = batch_size
 
         self.env = env
+        self.save_path = save_path
         self.num_intersections = len(self.env.tl_ids)
         self.num_episodes = 0
 
@@ -208,9 +209,10 @@ class GATWLightning(pl.LightningModule):
         self.num_heads = 5
         self.num_layers = 1
 
+        # Auxiliary variables
+        self._state_view_shape = (-1, self.num_intersections, self.obs_size)
         self._timestep = 0
         self._reward = 0
-        self.save_path = save_path
 
         self.reset(device=device)
 
@@ -284,56 +286,36 @@ class GATWLightning(pl.LightningModule):
             self.agent.play_step(self.net, epsilon=self.epsilon, device=device, adj=self.adjacency_matrix)
         self.agent.reset()
 
-    def forward(self, x):
-        """Passes in a state `x` through the network and gets the
-           `q_values` of each action as an output.
-
-        Parameters:
-        -----------
-        * x: environment state
-
-        Returns:
-        --------
-        * q-values
-        """
-        adj = self.adjacency_matrix
-        # batch_size != num_intersections
-        adj = adj.repeat(x.shape[0], 1, 1)
-        output = self.net(x, adj)
-        return output
-
     def loss_step(self, batch):
         """Calculates the mse loss using a mini batch from the replay buffer.
 
+
         Parameters:
         -----------
-        * batch: torch.tensor([B, N * obs_size])
-        Current mini batch of replay data
+        * batch: list<torch.Tensor> 
+        List containing five elements:
+        * state: torch.DoubleTensor<B, N * obs_size>
+        * action: torch.LongTensor<B, N>
+        * reward: torch.DoubleTensor<B, N>
+        * dones: torch.BoolTensor<B>
+        * next_state: torch.DoubleTensor<B, N * obs_size>
 
         Returns:
         --------
-        * loss: torch.tensor([B, N * obs_size])
+        * loss: torch.tensor([B])
         """
-        device = self.get_device(batch)
-        states, actions, rewards, dones, next_states = batch
+        states, actions, rewards, dones, next_states, adj = self._debatch(batch)
 
-        x = states.view((-1, self.num_intersections, self.obs_size))
-        x = x.type(torch.FloatTensor).to(device)
-        q_values = self.forward(x)
-        state_action_values = q_values.gather(1, actions.unsqueeze(-1)).squeeze(-1)
-
+        q_values = self.net(states, adj)
+        state_action_values = q_values.gather(2, actions.unsqueeze(-1)).squeeze(-1)
 
         with torch.no_grad():
-            y = states.view((-1, self.num_intersections, self.obs_size))
-            y = y.type(torch.FloatTensor).to(device)
-
-
-            adj = self.adjacency_matrix.repeat(y.shape[0], 1, 1)
-            next_state_values = self.target_net(y, adj).argmax(-1)
+            next_state_values = self.target_net(next_states, adj).argmax(-1)
 
             next_state_values[dones] = 0.0
 
             next_state_values = next_state_values.detach()
+
 
         expected_state_action_values = next_state_values * self.gamma + rewards
         loss = nn.MSELoss()(state_action_values, expected_state_action_values)
@@ -396,6 +378,42 @@ class GATWLightning(pl.LightningModule):
         dataset = RLDataset(self.buffer, self.episode_timesteps)
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, sampler=None)
         return dataloader
+
+    def _debatch(self, batch):
+        '''Splits and processes batch.
+
+        Parameters:
+        -----------
+        * batch: list<torch.Tensor> 
+        List containing five elements:
+        * state, torch.DoubleTensor<B, N * obs_size>
+        * action, torch.LongTensor<B, N>
+        * reward, torch.DoubleTensor<B, N>
+        * dones, torch.BoolTensor<B>
+        * next_state, torch.DoubleTensor<B, N * obs_size>
+
+
+        Returns:
+        --------
+        * state: torch.FloatTensor<B, N, obs_size>
+        * action: torch.LongTensor<B, N>
+        * reward: torch.DoubleTensor<B, N>
+        * dones: torch.BoolTensor<B>
+        * next_state: torch.FloatTensor<B, N * obs_size>
+        * adj: torch.FloatTensor<B, N, N>
+        ''' 
+        device = self.get_device(batch)
+        states, actions, rewards, dones, next_states = batch
+        states = self._debatch_state(states)
+        next_states = self._debatch_state(next_states)
+        adj = self.adjacency_matrix.repeat(states.shape[0], 1, 1)
+        return states, *batch[1:-1], next_states, adj
+
+    
+    def _debatch_state(self, states):
+        ret = states.view(self._state_view_shape). \
+              type(torch.FloatTensor).to(states.device)
+        return ret
 
     def train_dataloader(self):
         """Get train loader."""
