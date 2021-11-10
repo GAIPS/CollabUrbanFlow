@@ -6,8 +6,8 @@
 *.DS_Store
 
 # prevents data growth
-data/emissions/
-data/analysis
+data/*
+!data/network
 
 # VIM's swp file
 *.swp
