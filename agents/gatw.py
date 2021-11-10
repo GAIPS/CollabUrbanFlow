@@ -105,21 +105,20 @@ class Agent:
         * actions: dict<str, int>
         contains actions from all agents.
         """
-        actions = {}
         N = len(self.env.tl_ids)
 
         state = torch.tensor([self.state]).reshape((N, -1)).to(device)
 
-
         q_values = net(state, adj)
+
+        actions = torch.argmax(q_values, dim=-1)
 
         # Exploration & Exploitation:
         # XOR operation flips correctly
-        with torch.no_grad():
-            actions = torch.argmax(q_values, dim=1)
-            flip = torch.rand((N,)).to(device) < epsilon / 2
-            actions = actions.type(torch.bool).bitwise_xor(flip)
-            actions = dict(zip(self.env.tl_ids, actions.cpu().numpy().astype(int).tolist()))
+        ret = actions.clone().detach().cpu().numpy()
+        flip = np.random.rand(N) < epsilon / 2
+        ret = np.bitwise_xor(ret.astype(bool), flip).astype(int)
+        actions = dict(zip(self.env.tl_ids, ret.tolist()))
         return actions
 
     @torch.no_grad()
