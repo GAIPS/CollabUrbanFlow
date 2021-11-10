@@ -105,21 +105,20 @@ class Agent:
         * actions: dict<str, int>
         contains actions from all agents.
         """
-        actions = {}
         N = len(self.env.tl_ids)
 
         state = torch.tensor([self.state]).reshape((N, -1)).to(device)
 
-
         q_values = net(state, adj)
+
+        actions = torch.argmax(q_values, dim=-1)
 
         # Exploration & Exploitation:
         # XOR operation flips correctly
-        with torch.no_grad():
-            actions = torch.argmax(q_values, dim=1)
-            flip = torch.rand((N,)).to(device) < epsilon / 2
-            actions = actions.type(torch.bool).bitwise_xor(flip)
-            actions = dict(zip(self.env.tl_ids, actions.cpu().numpy().astype(int).tolist()))
+        ret = actions.clone().detach().cpu().numpy()
+        flip = np.random.rand(N) < epsilon / 2
+        ret = np.bitwise_xor(ret.astype(bool), flip).astype(int)
+        actions = dict(zip(self.env.tl_ids, ret.tolist()))
         return actions
 
     @torch.no_grad()
@@ -150,15 +149,15 @@ class Agent:
         for _ in range(10):
             experience = self.env.step(actions)
 
-        new_state, reward, done, _ = experience
-        new_state, reward, actions = \
-            list(flatten(new_state.values())), list(reward.values()), list(actions.values())
+        next_state, reward, done, _ = experience
+        next_state, reward, actions = \
+            list(flatten(next_state.values())), list(reward.values()), list(actions.values())
         if epsilon > 0.0:
-            exp = Experience(self.state, actions, reward, done, new_state)
+            exp = Experience(self.state, actions, reward, done, next_state)
 
             self.replay_buffer.append(exp)
 
-        self.state = new_state
+        self.state = next_state
         if done:
             self.reset()
         return reward, done
@@ -311,9 +310,6 @@ class GATWLightning(pl.LightningModule):
 
         with torch.no_grad():
             next_state_values = self.target_net(next_states, adj).argmax(-1)
-
-            next_state_values[dones] = 0.0
-
             next_state_values = next_state_values.detach()
 
 
@@ -351,7 +347,7 @@ class GATWLightning(pl.LightningModule):
             # save and reset the network
             # update log.
             self._timestep += self.episode_timesteps
-            self._reward += self.episode_reward
+            self._reward = self.episode_reward
             if self.save_path is not None:
                 self.save_checkpoint(self.save_path, self.timestep)
                 self.reset()
