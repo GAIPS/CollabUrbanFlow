@@ -109,6 +109,7 @@ class Agent:
 
         state = torch.tensor([self.state]).reshape((N, -1)).to(device)
 
+
         q_values = net(state, adj)
 
         actions = torch.argmax(q_values, dim=-1)
@@ -309,8 +310,8 @@ class GATWLightning(pl.LightningModule):
         state_action_values = q_values.gather(2, actions.unsqueeze(-1)).squeeze(-1)
 
         with torch.no_grad():
-            next_state_values = self.target_net(next_states, adj).argmax(-1)
-            next_state_values = next_state_values.detach()
+            next_state_values, _  = self.target_net(next_states, adj).max(-1)
+            next_state_values = next_state_values.clone().detach()
 
 
         expected_state_action_values = next_state_values * self.gamma + rewards
