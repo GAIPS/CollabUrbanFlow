@@ -179,7 +179,7 @@ class GATWLightning(pl.LightningModule):
                                save_agent_interval, chkpt_dir, seed)
     """
 
-    def __init__(self, env, device, replay_size=200, warm_start_steps=0,
+    def __init__(self, env, device, pretrain=True, replay_size=200, warm_start_steps=0,
                  gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
                  sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs):
@@ -214,7 +214,11 @@ class GATWLightning(pl.LightningModule):
         self._timestep = 0
         self._reward = 0
 
-        self.reset(device=device)
+        path = Path('data/pretrain') / self.env.network / 'gatw'
+        path = path / str(self.num_layers) / str(self.num_heads)
+        path = path / f'{self.hidden_size}.chkpt'
+        self._pretrain_path = path
+        self.reset(pretrain=pretrain, device=device)
 
     @property
     def episode_timestep(self):
@@ -237,12 +241,16 @@ class GATWLightning(pl.LightningModule):
         return epsilon
 
     
+    @property
+    def pretrain_path(self):
+        return self._pretrain_path
+
     @cached_property
     def adjacency_matrix(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         return torch.tensor(self.agent.adjacency_matrix).to(device)
 
-    def reset(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+    def reset(self, pretrain=False, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         if self.num_episodes > 0:
             state_dict = torch.load(self.save_path / str(self.timestep) / f'GATW.chkpt')
             self.net.load_state_dict(state_dict, strict=False)
@@ -266,6 +274,11 @@ class GATWLightning(pl.LightningModule):
                 self.num_layers
             ).to(device)
 
+            if pretrain and self.pretrain_path.exists():
+                state_dict = torch.load(self.pretrain_path)
+                self.net.load_state_dict(state_dict, strict=False)
+                self.target_net.load_state_dict(state_dict, strict=False)
+                
             self.buffer = ReplayBuffer(self.replay_size)
             self.agent = Agent(self.env, self.buffer)
             if self.warm_start_steps > 0: self.populate(device=device, steps=self.warm_start_steps)
