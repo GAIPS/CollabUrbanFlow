@@ -324,7 +324,7 @@ class GATWLightning(pl.LightningModule):
 
         with torch.no_grad():
             next_state_values, _  = self.target_net(next_states, adj).max(-1)
-            next_state_values = next_state_values.clone().detach()
+            next_state_values = next_state_values.detach()
 
 
         expected_state_action_values = next_state_values * self.gamma + rewards
