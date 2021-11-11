@@ -190,7 +190,7 @@ class GATVLightning(pl.LightningModule):
                                save_agent_interval, chkpt_dir, seed)
     """
 
-    def __init__(self, env, replay_size=200, warm_start_steps=0,
+    def __init__(self, env, device='cpu', replay_size=200, warm_start_steps=0,
                  gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
                  sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs,
@@ -225,7 +225,7 @@ class GATVLightning(pl.LightningModule):
             dropout,
             alpha,
             n_heads
-        ) 
+        ).to(device) 
         self.target_net = GATV(
             self.obs_size,
             self.hidden_size,
@@ -233,7 +233,7 @@ class GATVLightning(pl.LightningModule):
             dropout,
             alpha,
             n_heads
-        )
+        ).to(device)
 
         self.buffer = ReplayBuffer(self.replay_size)
         self.agent = Agent(self.env, self.buffer)
@@ -314,10 +314,7 @@ class GATVLightning(pl.LightningModule):
 
 
             adj = self.adjacency_matrix.repeat(y.shape[0], 1, 1)
-            next_state_values = self.target_net(y, adj).argmax(-1)
-
-            next_state_values[dones] = 0.0
-
+            next_state_values, _ = self.target_net(y, adj).max(-1)
             next_state_values = next_state_values.detach()
 
         expected_state_action_values = next_state_values * self.gamma + rewards
