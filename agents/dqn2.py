@@ -294,7 +294,7 @@ class DQN2Lightning(pl.LightningModule):
             q_values = self.net(x, n_a)
             state_action_values = q_values.gather(-1, u).squeeze(-1)
             with torch.no_grad():
-                next_state_values = self.target_net(y, n_a).argmax(-1)
+                next_state_values, _ = self.target_net(y, n_a).max(-1)
                 next_state_values = next_state_values.detach()
 
 
