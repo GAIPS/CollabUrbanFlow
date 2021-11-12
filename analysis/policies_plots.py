@@ -8,11 +8,12 @@
 """
 import sys
 from pathlib import Path
+import argparse
 # append the path of the
 # parent directory
 sys.path.append(Path.cwd().as_posix())
 
-import argparse
+import configparser
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -24,6 +25,7 @@ import json
 import torch
 import torch.nn.functional as F
 from agents.gatw import GATW
+from agents.dqn2 import DQN2
 
 from agents import load_agent
 from utils.network import get_adjacency_from_roadnet, get_capacity_from_roadnet
@@ -31,13 +33,14 @@ from utils.network import get_adjacency_from_roadnet, get_capacity_from_roadnet
 ROOT_PATH = '20211103135429.895808/arterial_20211103135431'
 OUTPUT_DIR = 'data/policies/'
 AGENT_TYPE = 'GATW'
-AGENT_CHOICES = ('GATW',)
+AGENT_CHOICES = ('GATW', 'DQN2', 'DQN3')
 
 
 # Signal plan constraints.
 min_green = 10
 max_green = 90
 
+def fmt(hparam_key): return hparam_key.split('.')[-1]
 # TODO: Refactor this
 def load_chkpt(chkpt_dir_path, agent_type):
 
@@ -45,17 +48,18 @@ def load_chkpt(chkpt_dir_path, agent_type):
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
+    
     state_dict = torch.load(chkpt_path / f'{agent_type}.chkpt')
-    in_features = state_dict['hparams.in_features']
-    n_embeddings = state_dict['hparams.n_embeddings']
-    n_hidden = state_dict['hparams.n_hidden']
-    out_features = state_dict['hparams.out_features']
-    n_heads = state_dict['hparams.n_heads']
-    n_layers = state_dict['hparams.n_layers']
+    kwargs = {fmt(k):v for k, v in state_dict.items() if 'hparams' in k} 
+    # in_features = state_dict['hparams.in_features']
+    # n_embeddings = state_dict['hparams.n_embeddings']
+    # n_hidden = state_dict['hparams.n_hidden']
+    # out_features = state_dict['hparams.out_features']
+    # n_heads = state_dict['hparams.n_heads']
+    # n_layers = state_dict['hparams.n_layers']
 
-    net = GATW(in_features=in_features, n_embeddings=n_embeddings,
-               n_hidden=n_hidden, out_features=out_features,
-               n_heads=n_heads, n_layers=n_layers)
+    net_class = DQN2 if 'DQN' in agent_type else eval(agent_type)
+    net = net_class(**kwargs)
     net.load_state_dict(state_dict, strict=False)
     return net
 
@@ -113,32 +117,52 @@ def main(source_folder):
         target_path = target_path / subfolder
         target_path.mkdir(exist_ok=True)
 
-    # 2) Load checkpoint
-    chkpt_path = source_path / 'checkpoints'
-    net = load_chkpt(chkpt_path, 'GATW')
 
-    # 3) Load adjacency matrix && delay capacities
+    # 2) Determine agent_type.
+    config_path = source_path / 'config' / 'train.config'
+    train_config = configparser.ConfigParser()
+    train_config.read(config_path.as_posix())
+    agent_type = train_config['agent_type']['agent_type']
+    
+
+    # 3) Load checkpoint
+    chkpt_path = source_path / 'checkpoints'
+    net = load_chkpt(chkpt_path, agent_type)
+
+    # 4) Load adjacency matrix && delay capacities
     config_path = source_path / 'config' / 'roadnet.json'
     with config_path.open('r') as f: roadnet  = json.load(f)
 
-    adj = np.array(get_adjacency_from_roadnet(roadnet))
     capacities = get_capacity_from_roadnet(roadnet)
 
-    # 4) Load the network states during training.
+    # 5) Load the network states during training.
     log_path = source_path / 'logs' / 'train_log.json'
     with log_path.open('r') as f: states  = batchfy(json.load(f)['states'])
 
-    batch_size = states.shape[0]
-    adj = np.tile(adj, (batch_size, 1, 1))
 
-    if AGENT_TYPE != 'GATW': raise KeyError('Only AGENT_TYPE GATW accepted.')
-    with torch.no_grad():
-        x = torch.tensor(states).type(torch.FloatTensor)
-        adj = torch.tensor(adj)
-        q_values = net(x, adj)
-        probs = F.softmax(q_values, dim=-1).numpy()
+    if agent_type not in AGENT_CHOICES: raise KeyError('Only agent_type GATW accepted.')
+    batch_size = states.shape[0]
+    if agent_type == 'GATW':
+        adj = np.array(get_adjacency_from_roadnet(roadnet))
+        adj = np.tile(adj, (batch_size, 1, 1))
+
+        with torch.no_grad():
+            x = torch.tensor(states).type(torch.FloatTensor)
+            adj = torch.tensor(adj)
+            q_values = net(x, adj)
+            probs = F.softmax(q_values, dim=-1).numpy()
         
-        
+    else:
+        n_agents = states.shape[1] 
+        with torch.no_grad():
+            x = torch.tensor(states).type(torch.FloatTensor)
+            xs = torch.tensor_split(x, n_agents, dim=1)
+            probs = []
+            for n_a in range(n_agents):
+                q_values = net(xs[n_a], n_a)
+                probs.append(F.softmax(q_values, dim=-1).numpy())
+            probs = np.concatenate(probs, axis=1)
+
     # aggregate w.r.t green time
     # segregate w.r.t tlid, phase
     # gets the data from the experiments
@@ -164,7 +188,7 @@ def main(source_folder):
             # Set the grid to interpolate to.
             xcoord, ycoord = np.linspace(0, cx, 50), np.linspace(0, cy, 50)
             xcoord, ycoord = np.meshgrid(xcoord, ycoord)
-            zcoord = griddata(xyz[:, :2], xyz[:, -1], (xcoord, ycoord), method='nearest') 
+            zcoord = griddata(xyz[:, :2], xyz[:, -1], (xcoord, ycoord), method='cubic') 
 
             im = ax.pcolormesh(xcoord, ycoord, zcoord, cmap=cm.jet,
                                shading='gouraud', vmin=0, vmax=1)
