@@ -7,7 +7,7 @@ import models.lightning_loops as ll
 def get_loop(agent_type, train=True):
     # if isinstance(agent, LightningModule):
     # Place here other deep learning.
-    if agent_type in ('DQN', 'DQN2', 'DQN3', 'GATV', 'GATW'):
+    if agent_type in ('DQN', 'DQN2', 'DQN3', 'DQN4', 'GATV', 'GATW'):
         if train: return ll.train_loop
         return ll.rollback_loop
     if train: return lp.train_loop

@@ -1,60 +1,58 @@
-"""Deep Reinforcement Learning for Multi-agent system.
+# Copyright The PyTorch Lightning team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Deep Reinforcement Learning: Deep Q-network (DQN)
 
-    Graph Attention Reinforcement Learning
+The template illustrates using Lightning for Reinforcement Learning. The example builds a basic DQN using the
+classic CartPole environment.
 
-    Paradigms:
-    ---------
-    * Parameter Sharing: att, W.
-    * Centralized Training: Decentralized Execution.
-    * Learning to communicate: Sends message to agents.
+To run the template, just run:
+`python reinforce_learn_Qnet.py`
 
-    To run a template:
-    1) set agent_type = DQN2
-    >>> python models/train.py
-    >>> tensorboard --logdir lightning_logs
+After ~1500 steps, you will see the total_reward hitting the max score of 475+.
+Open up TensorBoard to see the metrics:
 
+`tensorboard --logdir default`
 
-    TODO:
-    ----
-    * Move adjacency matrix to module.
+References
+----------
 
-    References:
-    -----------
-    `Graph attention networks. 2017`
-    https://arxiv.org/abs/1710.10903
-    Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Lio, and Yoshua Bengio. 2017.
-    https://github.com/Diego999/pyGAT/blob/master/train.py
+[1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
+Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
-import argparse
-from pathlib import Path
-from collections import OrderedDict
-from functools import cached_property
-from tqdm.auto import trange
-import numpy as np
-from scipy.sparse import csr_matrix
 
+import argparse
+from collections import deque, namedtuple, OrderedDict
+from typing import Iterator, List, Tuple
+from pathlib import Path
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
+from torch.utils.data.dataset import IterableDataset
 
 import pytorch_lightning as pl
-
 from utils.file_io import parse_train_config, \
     expr_logs_dump, expr_path_create, \
     expr_path_test_target
 from utils.utils import concat, flatten
 from agents.experience import Experience, ReplayBuffer, RLDataset
-from approximators.dqn2 import DQN2
+from approximators.dqn import DQN
+from environment import Environment
 
-TRAIN_CONFIG_PATH = 'config/train.config'
-RUN_CONFIG_PATH = 'config/run.config'
-
-def simple_hash(x): return hash(x) % (11 * 255)
-
-# Should this agent be general?
-# Or, should function approximation be associated to agnt
 class Agent:
     """Base Agent class handling the interaction with the environment.
 
@@ -107,7 +105,7 @@ class Agent:
             if np.random.random() < epsilon:
                 action = np.random.choice((0, 1))
             else:
-                q_values = net(state[n_a, :], n_a)
+                q_values = net(state)
                 action = int(torch.argmax(q_values, dim=-1))
             actions[tl_id] = int(action)
         return actions
@@ -153,28 +151,27 @@ class Agent:
         return reward, done
 
 
-class DQN2Lightning(pl.LightningModule):
-    """ Graph Attention Networks
 
-    * For function approximation.
-    * target_net: a dephased copy
-    * ReplayBuffer: for storing experiences.
+class DQN4Lightning(pl.LightningModule):
+    """Basic DQN Model.
 
-
-    >>> env = get_environment('arterial')
-    >>> agent = get_agent('DQN2', env, epsilon_init, epsilon_final, epsilon_timesteps)
-    >>> train_loop = get_loop('GATV')
-    >>> info_dict = train_loop(env, agent, experiment_time,
-                               save_agent_interval, chkpt_dir, seed)
+    >>> DQN4Lightning(env="CartPole-v1")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
+    DQNLightning(
+      (net): DQN(
+        (net): Sequential(...)
+      )
+      (target_net): DQN(
+        (net): Sequential(...)
+      )
+    )
     """
 
     def __init__(self, env, device, replay_size=200, warm_start_steps=0,
                  gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
                  sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs):
+        super().__init__(**kwargs)
 
-        super(DQN2Lightning, self).__init__(**kwargs)
-        self.automatic_optimization = False
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
@@ -222,22 +219,20 @@ class DQN2Lightning(pl.LightningModule):
                       self.epsilon_init - \
                       (self.timestep + 1) / self.epsilon_timesteps)
         return epsilon
-
-    
     def reset(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         if self.num_episodes > 0:
-            state_dict = torch.load(self.save_path / str(self.timestep) / f'DQN2.chkpt')
+            state_dict = torch.load(self.save_path / str(self.timestep) / f'DQN4.chkpt')
             self.net.load_state_dict(state_dict, strict=False)
             self.target_net.load_state_dict(state_dict, strict=False)
             self.agent.reset()
         else:
-            self.net = DQN2(
+            self.net = DQN(
                 self.n_agents,
                 self.n_input,
                 self.n_hidden,
                 self.n_output,
             ).to(device)
-            self.target_net = DQN2(
+            self.target_net = DQN(
                 self.n_agents,
                 self.n_input,
                 self.n_hidden,
@@ -250,73 +245,63 @@ class DQN2Lightning(pl.LightningModule):
         self.episode_reward = 0
 
     def populate(self, device=None, steps=1000):
-        """Carries out several random steps through the
-           environment to initially fill up the replay buffer with
-           experiences.
+        """Carries out several random steps through the environment to initially fill up the replay buffer with
+        experiences.
 
-        Parameters:
-        -----------
-        * steps: number of random steps to populate the buffer with
+        Args:
+            steps: number of random steps to populate the buffer with
         """
+
         if device is None:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         for i in range(steps):
             self.agent.play_step(self.net, epsilon=self.epsilon, device=device)
         self.agent.reset()
 
-    def loss_step(self, batch):
-        """Calculates the mse loss using a mini batch from the replay buffer.
+    def forward(self, x):
+        """Passes in a state `x` through the network and gets the `q_values` of each action as an output.
 
-
-        Parameters:
-        -----------
-        * batch: list<torch.Tensor> 
-        List containing five elements:
-        * state: torch.DoubleTensor<B, N * n_input>
-        * action: torch.LongTensor<B, N>
-        * reward: torch.DoubleTensor<B, N>
-        * dones: torch.BoolTensor<B>
-        * next_state: torch.DoubleTensor<B, N * n_input>
+        Args:
+            x: environment state
 
         Returns:
-        --------
-        * loss: torch.tensor([B])
+            q values
         """
-        states, actions, rewards, dones, next_states = self._debatch(batch)
+        output = self.net(x)
+        return output
 
-        losses = []
-        for n_a in range(self.n_agents):
-            x = states[:, n_a, :].squeeze(1) 
-            y = next_states[:, n_a, :].squeeze(1)
-            u = actions[:, n_a].unsqueeze(-1)
-            v = rewards[:, n_a]
+    def dqn_mse_loss(self, batch):
+        """Calculates the mse loss using a mini batch from the replay buffer.
 
-            q_values = self.net(x, n_a)
-            import ipdb; ipdb.set_trace()
-            state_action_values = q_values.gather(-1, u).squeeze(-1)
-            with torch.no_grad():
-                next_state_values, _ = self.target_net(y, n_a).max(-1)
-                next_state_values = next_state_values.detach()
+        Args:
+            batch: current mini batch of replay data
 
+        Returns:
+            loss
+        """
+        states, actions, rewards, dones, next_states = batch
 
-            expected_state_action_values = next_state_values * self.gamma + v
+        
+        q_values = self.net(states)
+        state_action_values = q_values.gather(1, actions).squeeze(-1)
+        with torch.no_grad():
+            next_state_values = self.target_net(next_states).max(1)[0]
+            next_state_values = next_state_values.detach()
 
-            loss = nn.MSELoss()(state_action_values, expected_state_action_values)
-            losses.append(loss)
+        expected_state_action_values = next_state_values * self.gamma + rewards.squeeze(-1)
 
-        return losses
+        return nn.MSELoss()(state_action_values, expected_state_action_values)
 
     def training_step(self, batch, nb_batch):
-        """Carries out a single step through the environment to update
-           the replay buffer. Then calculates loss based on the minibatch
-           received.
+        """Carries out a single step through the environment to update the replay buffer. Then calculates loss
+        based on the minibatch received.
 
-        Parameters:
-        -----------
-        * batch:
-        Current mini batch of replay data
-        * nb_batch:
-        Batch number
+        Args:
+            batch: current mini batch of replay data
+            nb_batch: batch number
+
+        Returns:
+            Training loss and log metrics
         """
         device = self.get_device(batch)
 
@@ -324,22 +309,8 @@ class DQN2Lightning(pl.LightningModule):
         reward, done = self.agent.play_step(self.net, self.epsilon, device)
         self.episode_reward += sum(reward) * 0.001
 
-
         # calculates training loss
-        optimizers = self.optimizers(use_pl_optimizer=True)
-        if not isinstance(optimizers, list): optimizers = [optimizers]
-
-        losses = self.loss_step(batch)
-        loss = 0
-        for i, opt in enumerate(optimizers):
-            opt.zero_grad()
-            losses[i].backward()
-            opt.step()
-            loss += losses[i].clone().detach()
-
-        # Soft update of target network
-        if self.episode_timestep % self.sync_rate == 0:
-            self.target_net.load_state_dict(self.net.state_dict(), strict=False)
+        loss = self.dqn_mse_loss(batch)
 
         if done:
             self.num_episodes += 1
@@ -362,21 +333,6 @@ class DQN2Lightning(pl.LightningModule):
         for k, v in log.items():
             self.log(k, v, logger=True, prog_bar=True)
 
-
-    def configure_optimizers(self):
-        """Initialize Adam optimizer."""
-        optimizers = []
-        for n_a in range(self.n_agents):
-            optimizers.append(
-                optim.Adam(self.net.individuals[n_a].parameters(), lr=self.lr)
-            )
-        return optimizers
-
-    def __dataloader(self):
-        """Initialize the Replay Buffer dataset used for retrieving experiences."""
-        dataset = RLDataset(self.buffer, self.episode_timesteps)
-        dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, sampler=None)
-        return dataloader
 
     def _debatch(self, batch):
         '''Splits and processes batch.
@@ -406,11 +362,16 @@ class DQN2Lightning(pl.LightningModule):
         next_states = self._debatch_state(next_states)
         return states, *batch[1:-1], next_states
 
-    
-    def _debatch_state(self, states):
-        ret = states.view(self._state_view_shape). \
-              type(torch.FloatTensor).to(states.device)
-        return ret
+    def configure_optimizers(self):
+        """Initialize Adam optimizer."""
+        optimizer = optim.Adam(self.net.dqn.parameters(), lr=self.lr)
+        return [optimizer]
+
+    def __dataloader(self):
+        """Initialize the Replay Buffer dataset used for retrieving experiences."""
+        dataset = RLDataset(self.buffer, self.episode_timesteps)
+        dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, sampler=None)
+        return dataloader
 
     def train_dataloader(self):
         """Get train loader."""
@@ -422,7 +383,7 @@ class DQN2Lightning(pl.LightningModule):
 
     """ Serialization """
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
-        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'DQN2.chkpt'
+        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'DQN4.chkpt'
         file_path.parent.mkdir(exist_ok=True)
         torch.save(self.net.state_dict(), file_path)
 
@@ -432,13 +393,13 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time=None, network=None, chkpt_
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
-    state_dict = torch.load(chkpt_path / f'DQN2.chkpt')
+    state_dict = torch.load(chkpt_path / f'DQN4.chkpt')
     n_agents = state_dict['hparams.n_agents']
     n_input = state_dict['hparams.n_input']
     n_hidden = state_dict['hparams.n_hidden']
     n_output = state_dict['hparams.n_output']
 
-    net = DQN2(n_agents=n_agents, n_input=n_input,
+    net = DQN(n_agents=n_agents, n_input=n_input,
                n_hidden=n_hidden, n_output=n_output)
     net.load_state_dict(state_dict, strict=False)
     agent = Agent(env)
