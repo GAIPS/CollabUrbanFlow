@@ -171,7 +171,7 @@ class DQN4Lightning(pl.LightningModule):
                  sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs):
         super().__init__(**kwargs)
-
+        self.automatic_optimization = False
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
@@ -310,7 +310,11 @@ class DQN4Lightning(pl.LightningModule):
         self.episode_reward += sum(reward) * 0.001
 
         # calculates training loss
+        opt = self.optimizers(use_pl_optimizer=True)
         loss = self.dqn_mse_loss(batch)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
 
         if done:
             self.num_episodes += 1
@@ -329,7 +333,7 @@ class DQN4Lightning(pl.LightningModule):
             "epsilon": torch.tensor(np.round(self.epsilon, 4)).to(device),
         }
 
-        self.log('loss', loss.to(device), logger=True, prog_bar=True)
+        self.log('loss', loss.clone().detach().to(device), logger=True, prog_bar=True)
         for k, v in log.items():
             self.log(k, v, logger=True, prog_bar=True)
 
