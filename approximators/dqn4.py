@@ -20,13 +20,16 @@ class DQN4(nn.Module):
         self.n_input = n_input
         self.n_hidden = n_hidden
         self.n_output = n_output
+        self.embeddings = Embedding(n_input, n_hidden)
+        self.predictions = []
 
-        self.nets = []
+
+        self.add_module('embeddings', self.embeddings)
         for n_a in range(n_agents):
-            self.nets.append(
-                MLP(n_input, n_output, n_hidden)
+            self.predictions.append(
+               nn.Linear(n_hidden, n_output)  
             )
-            self.add_module(f'dqn_{n_a}', self.nets[-1])
+            self.add_module(f'predicionts_{n_a}', self.predictions[-1])
 
         self.hparameters = {
             'hparams.n_agents': n_agents,
@@ -45,13 +48,25 @@ class DQN4(nn.Module):
 
     def forward(self, x):
         ''' x [B, n_agents, n_input] '''
+        x = self.embeddings(x)
+
+        x = F.relu(x)
 
         dim = 1 if len(x.shape) == 3 else 0
         xs = torch.tensor_split(x, self.n_agents, dim=dim)
         ys = []
         for n_a, x_a in enumerate(xs):
-            net = self.nets[n_a] 
+            net = self.predictions[n_a] 
             ys.append(net(x_a))
         ret = torch.cat(ys, dim=dim)
         return ret
 
+class Embedding(nn.Module):
+    def __init__(self, n_input, n_hidden):
+        super().__init__()
+        self.We = nn.Parameter(torch.empty(size=(n_input, n_hidden)))
+        nn.init.xavier_uniform_(self.We.data, gain=1.414)
+
+    def forward(self, x):
+        x = torch.matmul(x, self.We)
+        return x
