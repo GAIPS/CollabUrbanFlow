@@ -97,18 +97,21 @@ class Agent:
         * actions: dict<str, int>
         contains actions from all agents.
         """
-        actions = {}
+        # actions = {}
         n_agents = len(self.env.tl_ids)
         state = torch.tensor([self.state]).reshape((n_agents, -1)).to(device)
 
-        for n_a, tl_id in enumerate(self.env.tl_ids):
-            if np.random.random() < epsilon:
-                action = np.random.choice((0, 1))
-            else:
-                q_values = net(state)
-                action = int(torch.argmax(q_values, dim=-1))
-            actions[tl_id] = int(action)
-        return actions
+        # for n_a, tl_id in enumerate(self.env.tl_ids):
+        #     if np.random.random() < epsilon:
+        #         action = np.random.choice((0, 1))
+        #     else:
+        #     q_values = net(state)
+        import ipdb; ipdb.set_trace()
+        actions = net(state).argmax(dim=-1).clone().detach().cpu().numpy()
+        choice = np.random.choice((0, 1), replace=True, size=n_agents)
+        flip = np.random.rand(n_agents) < epsilon
+        actions = np.where(flip, choice, actions)
+        return dict(zip(self.env.tl_ids, actions))
 
     @torch.no_grad()
     def play_step(self, net, epsilon=0.0, device="cpu"):
@@ -282,8 +285,7 @@ class DQN4Lightning(pl.LightningModule):
         states, actions, rewards, dones, next_states = batch
 
         
-        q_values = self.net(states)
-        state_action_values = q_values.gather(1, actions).squeeze(-1)
+        state_action_values = self.net(states).gather(1, actions).squeeze(-1)
         with torch.no_grad():
             next_state_values = self.target_net(next_states).max(1)[0]
             next_state_values = next_state_values.detach()
