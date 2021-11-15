@@ -50,7 +50,7 @@ from utils.file_io import parse_train_config, \
     expr_path_test_target
 from utils.utils import concat, flatten
 from agents.experience import Experience, ReplayBuffer, RLDataset
-from approximators.dqn import DQN
+from approximators.dqn4 import DQN4
 from environment import Environment
 
 class Agent:
@@ -106,7 +106,6 @@ class Agent:
         #         action = np.random.choice((0, 1))
         #     else:
         #     q_values = net(state)
-        import ipdb; ipdb.set_trace()
         actions = net(state).argmax(dim=-1).clone().detach().cpu().numpy()
         choice = np.random.choice((0, 1), replace=True, size=n_agents)
         flip = np.random.rand(n_agents) < epsilon
@@ -229,13 +228,13 @@ class DQN4Lightning(pl.LightningModule):
             self.target_net.load_state_dict(state_dict, strict=False)
             self.agent.reset()
         else:
-            self.net = DQN(
+            self.net = DQN4(
                 self.n_agents,
                 self.n_input,
                 self.n_hidden,
                 self.n_output,
             ).to(device)
-            self.target_net = DQN(
+            self.target_net = DQN4(
                 self.n_agents,
                 self.n_input,
                 self.n_hidden,
@@ -282,15 +281,15 @@ class DQN4Lightning(pl.LightningModule):
         Returns:
             loss
         """
-        states, actions, rewards, dones, next_states = batch
+        states, actions, rewards, dones, next_states = self._debatch(batch)
 
-        
-        state_action_values = self.net(states).gather(1, actions).squeeze(-1)
+        q_values = self.net(states)
+        state_action_values = q_values.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
         with torch.no_grad():
-            next_state_values = self.target_net(next_states).max(1)[0]
+            next_state_values, _ = self.target_net(next_states).max(-1)
             next_state_values = next_state_values.detach()
 
-        expected_state_action_values = next_state_values * self.gamma + rewards.squeeze(-1)
+        expected_state_action_values = next_state_values * self.gamma + rewards
 
         return nn.MSELoss()(state_action_values, expected_state_action_values)
 
@@ -368,9 +367,13 @@ class DQN4Lightning(pl.LightningModule):
         next_states = self._debatch_state(next_states)
         return states, *batch[1:-1], next_states
 
+    def _debatch_state(self, states):
+        ret = states.view(self._state_view_shape). \
+              type(torch.FloatTensor).to(states.device)
+        return ret
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
-        optimizer = optim.Adam(self.net.dqn.parameters(), lr=self.lr)
+        optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
         return [optimizer]
 
     def __dataloader(self):
@@ -405,7 +408,7 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time=None, network=None, chkpt_
     n_hidden = state_dict['hparams.n_hidden']
     n_output = state_dict['hparams.n_output']
 
-    net = DQN(n_agents=n_agents, n_input=n_input,
+    net = DQN4(n_agents=n_agents, n_input=n_input,
                n_hidden=n_hidden, n_output=n_output)
     net.load_state_dict(state_dict, strict=False)
     agent = Agent(env)

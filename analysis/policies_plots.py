@@ -33,7 +33,7 @@ from utils.network import get_adjacency_from_roadnet, get_capacity_from_roadnet
 ROOT_PATH = '20211103135429.895808/arterial_20211103135431'
 OUTPUT_DIR = 'data/policies/'
 AGENT_TYPE = 'GATW'
-AGENT_CHOICES = ('GATW', 'DQN2', 'DQN3')
+AGENT_CHOICES = ('GATW', 'DQN2', 'DQN3', 'DQN4')
 
 
 # Signal plan constraints.
