@@ -262,6 +262,7 @@ class DQN2Lightning(pl.LightningModule):
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         for i in range(steps):
             self.agent.play_step(self.net, epsilon=self.epsilon, device=device)
+        self.env.reset()
         self.agent.reset()
 
     def loss_step(self, batch):
@@ -292,7 +293,6 @@ class DQN2Lightning(pl.LightningModule):
             v = rewards[:, n_a]
 
             q_values = self.net(x, n_a)
-            import ipdb; ipdb.set_trace()
             state_action_values = q_values.gather(-1, u).squeeze(-1)
             with torch.no_grad():
                 next_state_values, _ = self.target_net(y, n_a).max(-1)

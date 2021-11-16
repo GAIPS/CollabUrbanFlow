@@ -32,26 +32,24 @@ Second-Edition/blob/master/Chapter06/02_dqn_pong.py
 """
 
 import argparse
+from functools import cached_property
 from collections import deque, namedtuple, OrderedDict
-from typing import Iterator, List, Tuple
 from pathlib import Path
 
+
+import pytorch_lightning as pl
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
-from torch.utils.data.dataset import IterableDataset
 
-import pytorch_lightning as pl
-from utils.file_io import parse_train_config, \
-    expr_logs_dump, expr_path_create, \
-    expr_path_test_target
-from utils.utils import concat, flatten
+from environment import Environment
+from utils.utils import flatten
+from utils.network import get_adjacency_from_env
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.dqn4 import DQN4
-from environment import Environment
 
 class Agent:
     """Base Agent class handling the interaction with the environment.
@@ -76,6 +74,10 @@ class Agent:
         self.replay_buffer = replay_buffer
 
         self.reset()
+
+    @cached_property
+    def adjacency_matrix(self):
+        return get_adjacency_from_env(self.env)
 
     def reset(self):
         """Resets the environment and updates the state."""
@@ -192,7 +194,9 @@ class DQN4Lightning(pl.LightningModule):
 
         self.n_agents = len(self.env.tl_ids)
         self.n_input = 4
+        self.n_embeddings = 8
         self.n_hidden = 16
+        self.n_heads = 3
         self.n_output = 2
 
         # Auxiliary variables
@@ -221,6 +225,12 @@ class DQN4Lightning(pl.LightningModule):
                       self.epsilon_init - \
                       (self.timestep + 1) / self.epsilon_timesteps)
         return epsilon
+
+    @cached_property
+    def adjacency_matrix(self):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        return torch.tensor(self.agent.adjacency_matrix).to(device)
+
     def reset(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         if self.num_episodes > 0:
             state_dict = torch.load(self.save_path / str(self.timestep) / f'DQN4.chkpt')
@@ -228,37 +238,37 @@ class DQN4Lightning(pl.LightningModule):
             self.target_net.load_state_dict(state_dict, strict=False)
             self.agent.reset()
         else:
+            self.buffer = ReplayBuffer(self.replay_size)
+            self.agent = Agent(self.env, self.buffer)
             self.net = DQN4(
-                self.n_agents,
+                self.adjacency_matrix,
                 self.n_input,
+                self.n_embeddings,
                 self.n_hidden,
+                self.n_heads,
                 self.n_output,
             ).to(device)
             self.target_net = DQN4(
-                self.n_agents,
+                self.adjacency_matrix,
                 self.n_input,
+                self.n_embeddings,
                 self.n_hidden,
+                self.n_heads,
                 self.n_output,
             ).to(device)
-
-            self.buffer = ReplayBuffer(self.replay_size)
-            self.agent = Agent(self.env, self.buffer)
             if self.warm_start_steps > 0: self.populate(device=device, steps=self.warm_start_steps)
         self.episode_reward = 0
 
-    def populate(self, device=None, steps=1000):
+    def populate(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'), steps=1000):
         """Carries out several random steps through the environment to initially fill up the replay buffer with
         experiences.
 
         Args:
             steps: number of random steps to populate the buffer with
         """
-
-        if device is None:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         for i in range(steps):
             self.agent.play_step(self.net, epsilon=self.epsilon, device=device)
-        self.agent.reset()
+        self.env.reset(); self.agent.reset()
 
     def forward(self, x):
         """Passes in a state `x` through the network and gets the `q_values` of each action as an output.
@@ -402,14 +412,17 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time=None, network=None, chkpt_
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
+    agent = Agent(env)
     state_dict = torch.load(chkpt_path / f'DQN4.chkpt')
     n_agents = state_dict['hparams.n_agents']
     n_input = state_dict['hparams.n_input']
+    n_embeddings = state_dict['hparams.n_embeddings']
     n_hidden = state_dict['hparams.n_hidden']
+    n_heads = state_dict['hparams.n_heads']
     n_output = state_dict['hparams.n_output']
 
-    net = DQN4(n_agents=n_agents, n_input=n_input,
-               n_hidden=n_hidden, n_output=n_output)
+    net = DQN4(agent.adjacency_matrix, n_input=n_input,
+               n_embeddings=n_embeddings, n_hidden=n_hidden,
+               n_heads=n_heads, n_output=n_output)
     net.load_state_dict(state_dict, strict=False)
-    agent = Agent(env)
     return agent, net
