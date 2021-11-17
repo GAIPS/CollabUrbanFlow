@@ -10,13 +10,11 @@ from torch import nn
 import torch
 import torch.nn.functional as F
 
-from approximators.mlp import MLP
-
-class DQN4(nn.Module):
+class GAT(nn.Module):
     def __init__(self, adjacency, n_input=4, n_embeddings=8,
                  n_hidden=16, n_heads=5, n_output=2):
         """Dense version of GAT."""
-        super(DQN4, self).__init__()
+        super(GAT, self).__init__()
 
         self.adjacency = adjacency
         self.n_agents = adjacency.shape[0]
@@ -46,7 +44,7 @@ class DQN4(nn.Module):
         }
 
     def state_dict(self):
-        state_dict = super(DQN4, self).state_dict()
+        state_dict = super(GAT, self).state_dict()
         state_dict.update(self.get_extra_state())
         return state_dict
 
@@ -97,7 +95,7 @@ class GraphAttentionLayer(nn.Module):
         size of hidden layers.
         """
         super(GraphAttentionLayer, self).__init__()
-        self.adj = adjacency
+        self.adj = torch.tensor(adjacency)
         self.n_input = n_input
         self.n_output = n_output
 
@@ -128,8 +126,11 @@ class GraphAttentionLayer(nn.Module):
 
         # zij = eij if j --> i
         # zij = epsilon otherwise, -9e15
-        zero_vec = -9e15 * torch.ones_like(e)
-        z = torch.where(adj > 0, e, zero_vec)
+        try:
+            zero_vec = -9e15 * torch.ones_like(e)
+            z = torch.where(adj > 0, e, zero_vec)
+        except Exception:
+            import ipdb; ipdb.set_trace()
         alpha = F.softmax(z, dim=-1)
 
         Whc = torch.matmul(h, self.Wc)

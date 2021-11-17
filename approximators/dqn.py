@@ -21,9 +21,12 @@ class DQN(nn.Module):
         self.n_hidden = n_hidden
         self.n_output = n_output
 
-        self.dqn = MLP(n_input, n_output, n_hidden)
-            
-        self.add_module(f'dqn', self.dqn)
+        self.individuals = []
+        for n_a in range(n_agents):
+            self.individuals.append(
+                MLP(n_input, n_output, n_hidden)
+            )
+            self.add_module(f'dqn_{n_a}', self.individuals[-1])
 
         self.hparameters = {
             'hparams.n_agents': n_agents,
@@ -40,7 +43,8 @@ class DQN(nn.Module):
     def get_extra_state(self):
         return self.hparameters
 
-    def forward(self, x):
-        ''' x [B, n_input] '''
-        return self.dqn(x) 
+    def forward(self, x, n_a):
+        ''' x [B, n_agents, n_input] '''
+        net = self.individuals[n_a] 
+        return net(x) 
 

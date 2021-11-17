@@ -9,12 +9,18 @@
 import json
 from datetime import datetime
 
+
 from pathlib import Path
 from tqdm.auto import trange
+import argparse
 import configparser
 import numpy as np
 from cityflow import Engine
 from pytorch_lightning import seed_everything
+# FIXME: REMOVE
+import sys; sys.path.append(Path.cwd().as_posix())
+
+
 
 
 from environment import Environment
@@ -28,6 +34,17 @@ from models import get_loop
 PYTHONHASHSEED=-1
 
 TRAIN_CONFIG_PATH = 'config/train.config'
+
+def get_arguments():
+
+    parser = argparse.ArgumentParser(
+        description="""Loads a previously saved checkpoint and performs rollouts"""
+    )
+
+    parser.add_argument('path', type=str, nargs='?',
+                help='Path to the experiment root folder')
+
+    return parser.parse_args()
 
 def main(test_config_path=None):
 
@@ -63,7 +80,7 @@ def main(test_config_path=None):
     agent, nets = load_agent(env, agent_type, chkpt_dir_path, chkpt_num, rollout_time, network)
 
     rollback_loop = get_loop(agent_type, train=False)
-    if agent_type in ('DQN', 'DQN2', 'DQN3', 'DQN4', 'GATV', 'GATW'):
+    if agent_type in ('DQN', 'GAT'):
         info_dict = rollback_loop(env, agent, nets, rollout_time, target_path, seed)
     else:
         agent.stop()
@@ -73,4 +90,7 @@ def main(test_config_path=None):
     return info_dict
 
 if __name__ == '__main__':
-    main(test_config_path='data/emissions/20211010185842.098537/')
+    flags = get_arguments()
+
+    # Check for test config else copy from path 
+    main(test_config_path=flags.path)
