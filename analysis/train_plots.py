@@ -18,6 +18,8 @@ import argparse
 import numpy as np
 from pathlib import Path
 import configparser
+import sys
+sys.path.append(Path.cwd().as_posix())
 from utils.file_io import parse_train_config
 
 import pandas as pd
@@ -109,18 +111,6 @@ def resample(data, column, freq=6, to_records=True):
    else:
        return  np.sum(df.values, axis=1)
 
-def episodic_breakdown(data, total_episodes, num_series=3): 
-    """Breaks data down into evenly spaced episodes"""
-    episode = int(len(data['rewards']) / total_episodes)
-    for k, v in data.items():
-        d = []
-        for eps in range(total_episodes):
-            start = eps * episode
-            finish = start + episode
-            if eps in (0, int(total_episodes / 2), total_episodes-1):
-                d += v[start:finish]
-        data[k] = v
-        
 def main(experiment_root_folder=None):
 
     print('\nRUNNING analysis/train_plots.py\n')

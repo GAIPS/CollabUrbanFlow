@@ -25,38 +25,27 @@
     Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Lio, and Yoshua Bengio. 2017.
     https://github.com/Diego999/pyGAT/blob/master/train.py
 """
-import argparse
-from pathlib import Path
-from collections import OrderedDict
-from functools import cached_property
-from tqdm.auto import trange
-import numpy as np
-from scipy.sparse import csr_matrix
 
+import argparse
+from functools import cached_property
+from collections import deque, namedtuple, OrderedDict
+from pathlib import Path
+
+
+import pytorch_lightning as pl
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.autograd import Variable
 from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
-import pytorch_lightning as pl
-
-from utils.file_io import parse_train_config, \
-    expr_logs_dump, expr_path_create, \
-    expr_path_test_target
-from utils.utils import concat, flatten
+from environment import Environment
+from utils.utils import flatten
 from utils.network import get_adjacency_from_env
 from agents.experience import Experience, ReplayBuffer, RLDataset
-from approximators.gatw import GATW
+from approximators.gat import GAT
 
-TRAIN_CONFIG_PATH = 'config/train.config'
-RUN_CONFIG_PATH = 'config/run.config'
-
-def simple_hash(x): return hash(x) % (11 * 255)
-
-# Should this agent be general?
-# Or, should function approximation be associated to agnt
 class Agent:
     """Base Agent class handling the interaction with the environment.
 
@@ -90,7 +79,7 @@ class Agent:
         # Assumption: All intersections have the same phase.
         self.state = list(flatten(self.env.reset().values()))
 
-    def act(self, net, epsilon, device, adj):
+    def act(self, net, epsilon, device):
         """For a given network, decide what action to carry out
             using an epsilon-greedy policy.
 
@@ -105,25 +94,18 @@ class Agent:
         * actions: dict<str, int>
         contains actions from all agents.
         """
-        N = len(self.env.tl_ids)
+        # actions = {}
+        n_agents = len(self.env.tl_ids)
+        state = torch.tensor([self.state]).reshape((n_agents, -1)).to(device)
 
-        state = torch.tensor([self.state]).reshape((N, -1)).to(device)
-
-
-        q_values = net(state, adj)
-
-        actions = torch.argmax(q_values, dim=-1)
-
-        # Exploration & Exploitation:
-        # XOR operation flips correctly
-        ret = actions.clone().detach().cpu().numpy()
-        flip = np.random.rand(N) < epsilon / 2
-        ret = np.bitwise_xor(ret.astype(bool), flip).astype(int)
-        actions = dict(zip(self.env.tl_ids, ret.tolist()))
-        return actions
+        actions = net(state).argmax(dim=-1).clone().detach().cpu().numpy()
+        choice = np.random.choice((0, 1), replace=True, size=n_agents)
+        flip = np.random.rand(n_agents) < epsilon
+        actions = np.where(flip, choice, actions)
+        return dict(zip(self.env.tl_ids, actions))
 
     @torch.no_grad()
-    def play_step(self, net, epsilon=0.0, device="cpu", adj=None):
+    def play_step(self, net, epsilon=0.0, device="cpu"):
         """Carries out a single interaction step between the agent
         and the environment.
 
@@ -143,8 +125,7 @@ class Agent:
         * done: bool
         if the episode is over
         """
-        if adj is None: adj = torch.tensor(self.adjacency_matrix).to(device)
-        actions = self.act(net, epsilon, device, adj)
+        actions = self.act(net, epsilon, device)
 
         # do step in the environment -- 10s
         for _ in range(10):
@@ -164,27 +145,27 @@ class Agent:
         return reward, done
 
 
-class GATWLightning(pl.LightningModule):
-    """ Graph Attention Networks
 
-    * For function approximation.
-    * target_net: a dephased copy
-    * ReplayBuffer: for storing experiences.
+class GATLightning(pl.LightningModule):
+    """Basic DQN Model.
 
-
-    >>> env = get_environment('arterial')
-    >>> agent = get_agent('GATW', env, epsilon_init, epsilon_final, epsilon_timesteps)
-    >>> train_loop = get_loop('GATV')
-    >>> info_dict = train_loop(env, agent, experiment_time,
-                               save_agent_interval, chkpt_dir, seed)
+    >>> GATLightning(env="CartPole-v1")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
+    DQNLightning(
+      (net): DQN(
+        (net): Sequential(...)
+      )
+      (target_net): DQN(
+        (net): Sequential(...)
+      )
+    )
     """
 
-    def __init__(self, env, device, pretrain=True, replay_size=200, warm_start_steps=0,
+    def __init__(self, env, device, replay_size=200, warm_start_steps=0,
                  gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
                  sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs):
-
-        super(GATWLightning, self).__init__(**kwargs)
+        super().__init__(**kwargs)
+        self.automatic_optimization = False
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
@@ -198,27 +179,22 @@ class GATWLightning(pl.LightningModule):
 
         self.env = env
         self.save_path = save_path
-        self.num_intersections = len(self.env.tl_ids)
         self.num_episodes = 0
 
-        # TODO: GATs hyperparams
-        self.obs_size = 4
-        self.num_embeddings = 8
-        self.hidden_size = 16
-        self.num_actions = 2
-        self.num_heads = 5
-        self.num_layers = 1
+
+        self.n_agents = len(self.env.tl_ids)
+        self.n_input = 4
+        self.n_embeddings = 16
+        self.n_hidden = 32
+        self.n_heads = 5
+        self.n_output = 2
 
         # Auxiliary variables
-        self._state_view_shape = (-1, self.num_intersections, self.obs_size)
+        self._state_view_shape = (-1, self.n_agents, self.n_input)
         self._timestep = 0
         self._reward = 0
 
-        path = Path('data/pretrain') / self.env.network / 'gatw'
-        path = path / str(self.num_layers) / str(self.num_heads)
-        path = path / f'{self.hidden_size}.chkpt'
-        self._pretrain_path = path
-        self.reset(pretrain=pretrain, device=device)
+        self.reset(device=device)
 
     @property
     def episode_timestep(self):
@@ -227,7 +203,6 @@ class GATWLightning(pl.LightningModule):
     @property
     def timestep(self):
         return self._timestep + self.episode_timestep
-
 
     @property
     def reward(self):
@@ -240,121 +215,106 @@ class GATWLightning(pl.LightningModule):
                       (self.timestep + 1) / self.epsilon_timesteps)
         return epsilon
 
-    
-    @property
-    def pretrain_path(self):
-        return self._pretrain_path
-
     @cached_property
     def adjacency_matrix(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         return torch.tensor(self.agent.adjacency_matrix).to(device)
 
-    def reset(self, pretrain=False, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
+    def reset(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
         if self.num_episodes > 0:
-            state_dict = torch.load(self.save_path / str(self.timestep) / f'GATW.chkpt')
+            state_dict = torch.load(self.save_path / str(self.timestep) / f'GAT.chkpt')
             self.net.load_state_dict(state_dict, strict=False)
             self.target_net.load_state_dict(state_dict, strict=False)
             self.agent.reset()
         else:
-            self.net = GATW(
-                self.obs_size,
-                self.num_embeddings,
-                self.hidden_size,
-                self.num_actions,
-                self.num_heads,
-                self.num_layers
-            ).to(device)
-            self.target_net = GATW(
-                self.obs_size,
-                self.num_embeddings,
-                self.hidden_size,
-                self.num_actions,
-                self.num_heads,
-                self.num_layers
-            ).to(device)
-
-            if pretrain and self.pretrain_path.exists():
-                state_dict = torch.load(self.pretrain_path)
-                self.net.load_state_dict(state_dict, strict=False)
-                self.target_net.load_state_dict(state_dict, strict=False)
-                
             self.buffer = ReplayBuffer(self.replay_size)
             self.agent = Agent(self.env, self.buffer)
+            self.net = GAT(
+                self.adjacency_matrix,
+                self.n_input,
+                self.n_embeddings,
+                self.n_hidden,
+                self.n_heads,
+                self.n_output,
+            ).to(device)
+            self.target_net = GAT(
+                self.adjacency_matrix,
+                self.n_input,
+                self.n_embeddings,
+                self.n_hidden,
+                self.n_heads,
+                self.n_output,
+            ).to(device)
             if self.warm_start_steps > 0: self.populate(device=device, steps=self.warm_start_steps)
         self.episode_reward = 0
 
-    def populate(self, device=None, steps=1000):
-        """Carries out several random steps through the
-           environment to initially fill up the replay buffer with
-           experiences.
+    def populate(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'), steps=1000):
+        """Carries out several random steps through the environment to initially fill up the replay buffer with
+        experiences.
 
-        Parameters:
-        -----------
-        * steps: number of random steps to populate the buffer with
+        Args:
+            steps: number of random steps to populate the buffer with
         """
-        if device is None:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         for i in range(steps):
-            self.agent.play_step(self.net, epsilon=self.epsilon, device=device, adj=self.adjacency_matrix)
-        self.agent.reset()
+            self.agent.play_step(self.net, epsilon=self.epsilon, device=device)
+        self.env.reset(); self.agent.reset()
 
-    def loss_step(self, batch):
-        """Calculates the mse loss using a mini batch from the replay buffer.
+    def forward(self, x):
+        """Passes in a state `x` through the network and gets the `q_values` of each action as an output.
 
-
-        Parameters:
-        -----------
-        * batch: list<torch.Tensor> 
-        List containing five elements:
-        * state: torch.DoubleTensor<B, N * obs_size>
-        * action: torch.LongTensor<B, N>
-        * reward: torch.DoubleTensor<B, N>
-        * dones: torch.BoolTensor<B>
-        * next_state: torch.DoubleTensor<B, N * obs_size>
+        Args:
+            x: environment state
 
         Returns:
-        --------
-        * loss: torch.tensor([B])
+            q values
         """
-        states, actions, rewards, dones, next_states, adj = self._debatch(batch)
+        output = self.net(x)
+        return output
 
-        q_values = self.net(states, adj)
-        state_action_values = q_values.gather(2, actions.unsqueeze(-1)).squeeze(-1)
+    def dqn_mse_loss(self, batch):
+        """Calculates the mse loss using a mini batch from the replay buffer.
 
+        Args:
+            batch: current mini batch of replay data
+
+        Returns:
+            loss
+        """
+        states, actions, rewards, dones, next_states = self._debatch(batch)
+
+        q_values = self.net(states)
+        state_action_values = q_values.gather(-1, actions.unsqueeze(-1)).squeeze(-1)
         with torch.no_grad():
-            next_state_values, _  = self.target_net(next_states, adj).max(-1)
-            next_state_values = next_state_values.clone().detach()
-
+            next_state_values, _ = self.target_net(next_states).max(-1)
+            next_state_values = next_state_values.detach()
 
         expected_state_action_values = next_state_values * self.gamma + rewards
-        loss = nn.MSELoss()(state_action_values, expected_state_action_values)
-        return loss
+
+        return nn.MSELoss()(state_action_values, expected_state_action_values)
 
     def training_step(self, batch, nb_batch):
-        """Carries out a single step through the environment to update
-           the replay buffer. Then calculates loss based on the minibatch
-           received.
+        """Carries out a single step through the environment to update the replay buffer. Then calculates loss
+        based on the minibatch received.
 
-        Parameters:
-        -----------
-        * batch:
-        Current mini batch of replay data
-        * nb_batch:
-        Batch number
+        Args:
+            batch: current mini batch of replay data
+            nb_batch: batch number
+
+        Returns:
+            Training loss and log metrics
         """
         device = self.get_device(batch)
-        adj = self.adjacency_matrix
 
         # step through environment with agent
-        reward, done = self.agent.play_step(self.net, self.epsilon, device, adj)
+        reward, done = self.agent.play_step(self.net, self.epsilon, device)
         self.episode_reward += sum(reward) * 0.001
 
-        loss = self.loss_step(batch)
-
-        # Soft update of target network
-        if self.episode_timestep % self.sync_rate == 0:
-            self.target_net.load_state_dict(self.net.state_dict(), strict=False)
+        # calculates training loss
+        opt = self.optimizers(use_pl_optimizer=True)
+        loss = self.dqn_mse_loss(batch)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
 
         if done:
             self.num_episodes += 1
@@ -378,6 +338,38 @@ class GATWLightning(pl.LightningModule):
             self.log(k, v, logger=True, prog_bar=True)
 
 
+    def _debatch(self, batch):
+        '''Splits and processes batch.
+
+        Parameters:
+        -----------
+        * batch: list<torch.Tensor> 
+        List containing five elements:
+        * state, torch.DoubleTensor<B, N * n_input>
+        * action, torch.LongTensor<B, N>
+        * reward, torch.DoubleTensor<B, N>
+        * dones, torch.BoolTensor<B>
+        * next_state, torch.DoubleTensor<B, N * n_input>
+
+
+        Returns:
+        --------
+        * state: torch.FloatTensor<B, N, n_input>
+        * action: torch.LongTensor<B, N>
+        * reward: torch.DoubleTensor<B, N>
+        * dones: torch.BoolTensor<B>
+        * next_state: torch.FloatTensor<B, N * n_input>
+        ''' 
+        device = self.get_device(batch)
+        states, actions, rewards, dones, next_states = batch
+        states = self._debatch_state(states)
+        next_states = self._debatch_state(next_states)
+        return states, *batch[1:-1], next_states
+
+    def _debatch_state(self, states):
+        ret = states.view(self._state_view_shape). \
+              type(torch.FloatTensor).to(states.device)
+        return ret
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
         optimizer = optim.Adam(self.net.parameters(), lr=self.lr)
@@ -389,42 +381,6 @@ class GATWLightning(pl.LightningModule):
         dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, sampler=None)
         return dataloader
 
-    def _debatch(self, batch):
-        '''Splits and processes batch.
-
-        Parameters:
-        -----------
-        * batch: list<torch.Tensor> 
-        List containing five elements:
-        * state, torch.DoubleTensor<B, N * obs_size>
-        * action, torch.LongTensor<B, N>
-        * reward, torch.DoubleTensor<B, N>
-        * dones, torch.BoolTensor<B>
-        * next_state, torch.DoubleTensor<B, N * obs_size>
-
-
-        Returns:
-        --------
-        * state: torch.FloatTensor<B, N, obs_size>
-        * action: torch.LongTensor<B, N>
-        * reward: torch.DoubleTensor<B, N>
-        * dones: torch.BoolTensor<B>
-        * next_state: torch.FloatTensor<B, N * obs_size>
-        * adj: torch.FloatTensor<B, N, N>
-        ''' 
-        device = self.get_device(batch)
-        states, actions, rewards, dones, next_states = batch
-        states = self._debatch_state(states)
-        next_states = self._debatch_state(next_states)
-        adj = self.adjacency_matrix.repeat(states.shape[0], 1, 1)
-        return states, *batch[1:-1], next_states, adj
-
-    
-    def _debatch_state(self, states):
-        ret = states.view(self._state_view_shape). \
-              type(torch.FloatTensor).to(states.device)
-        return ret
-
     def train_dataloader(self):
         """Get train loader."""
         return self.__dataloader()
@@ -435,7 +391,7 @@ class GATWLightning(pl.LightningModule):
 
     """ Serialization """
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
-        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'GATW.chkpt'
+        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'GAT.chkpt'
         file_path.parent.mkdir(exist_ok=True)
         torch.save(self.net.state_dict(), file_path)
 
@@ -445,25 +401,17 @@ def load_checkpoint(env, chkpt_dir_path, rollout_time=None, network=None, chkpt_
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
-    state_dict = torch.load(chkpt_path / f'GATW.chkpt')
-    in_features = state_dict['hparams.in_features']
-<<<<<<< HEAD
-    num_embeddings = state_dict['hparams.num_embeddings']
-    n_hidden = state_dict['hparams.n_hidden']
-    out_features = state_dict['hparams.out_features']
-    num_heads = state_dict['hparams.num_heads']
-    num_layers = state_dict['hparams.num_layers']
-=======
-    num_embeddings = state_dict['hparams.n_embeddings']
-    n_hidden = state_dict['hparams.n_hidden']
-    out_features = state_dict['hparams.out_features']
-    num_heads = state_dict['hparams.n_heads']
-    num_layers = state_dict['hparams.n_layers']
->>>>>>> c6a475cc6092e0aae92ff04303bd24c4ee5e6ebe
-
-    net = GATW(in_features=in_features, n_embeddings=num_embeddings,
-               n_hidden=n_hidden, out_features=out_features,
-               n_heads=num_heads, n_layers=num_layers)
-    net.load_state_dict(state_dict, strict=False)
     agent = Agent(env)
+    state_dict = torch.load(chkpt_path / f'GAT.chkpt')
+    n_agents = state_dict['hparams.n_agents']
+    n_input = state_dict['hparams.n_input']
+    n_embeddings = state_dict['hparams.n_embeddings']
+    n_hidden = state_dict['hparams.n_hidden']
+    n_heads = state_dict['hparams.n_heads']
+    n_output = state_dict['hparams.n_output']
+
+    net = GAT(agent.adjacency_matrix, n_input=n_input,
+               n_embeddings=n_embeddings, n_hidden=n_hidden,
+               n_heads=n_heads, n_output=n_output)
+    net.load_state_dict(state_dict, strict=False)
     return agent, net

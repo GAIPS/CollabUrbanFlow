@@ -7,7 +7,7 @@
 
 # prevents data growth
 data/*
-!data/network
+!data/networks/*
 
 # VIM's swp file
 *.swp

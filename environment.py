@@ -279,5 +279,6 @@ class Environment(object):
         self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
         self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
         self.info_dict["states"].append(self.observations)
+        self.info_dict["timesteps"].append(self.timestep)
 
 

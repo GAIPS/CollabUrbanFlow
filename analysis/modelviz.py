@@ -31,13 +31,13 @@ name = 'intersection'
 print(f'Loading environment: {name}')
 env = get_environment(name)
 
-name  = 'GATW'
+name  = 'DQN3'
 print(f'Populating model: {name}')
 model = get_agent(name, env, 0.0, 0.0, 3600)
 
 net = model.net
 agent = model.agent
-adj = model.adjacency_matrix
+# adj = model.adjacency_matrix
 n_agents = len(env.tl_ids)
 
 print(f': {model}')
@@ -46,7 +46,8 @@ for _ in tqdm(range(timesteps)):
     agent.play_step(net, epsilon=0.0)
 
 x = torch.tensor(agent.state).reshape((n_agents, -1))
-model_dot = make_dot(net(x, adj), params=dict(net.named_parameters()))
+# model_dot = make_dot(net(x, adj), params=dict(net.named_parameters()))
+model_dot = make_dot(net(x, 0), params=dict(net.named_parameters()))
 
 graph_path = Path.cwd() / 'data' 
 subfolders = ('visualizations', 'models')
