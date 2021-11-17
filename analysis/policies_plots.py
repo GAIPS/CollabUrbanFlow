@@ -25,7 +25,7 @@ import json
 import torch
 import torch.nn.functional as F
 from agents.gatw import GATW
-from agents.dqn2 import DQN2
+from agents.dqn import DQN
 
 from agents import load_agent
 from utils.network import get_adjacency_from_roadnet, get_capacity_from_roadnet
@@ -33,7 +33,7 @@ from utils.network import get_adjacency_from_roadnet, get_capacity_from_roadnet
 ROOT_PATH = '20211103135429.895808/arterial_20211103135431'
 OUTPUT_DIR = 'data/policies/'
 AGENT_TYPE = 'GATW'
-AGENT_CHOICES = ('GATW', 'DQN2', 'DQN3', 'DQN4')
+AGENT_CHOICES = ('DQN','GAT')
 
 
 # Signal plan constraints.
@@ -58,7 +58,7 @@ def load_chkpt(chkpt_dir_path, agent_type):
     # n_heads = state_dict['hparams.n_heads']
     # n_layers = state_dict['hparams.n_layers']
 
-    net_class = DQN2 if 'DQN' in agent_type else eval(agent_type)
+    net_class = eval(agent_type)
     net = net_class(**kwargs)
     net.load_state_dict(state_dict, strict=False)
     return net
