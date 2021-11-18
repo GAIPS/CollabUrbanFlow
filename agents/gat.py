@@ -316,6 +316,10 @@ class GATLightning(pl.LightningModule):
         loss.backward()
         opt.step()
 
+        # Soft update of target network
+        if self.episode_timestep % self.sync_rate == 0:
+            self.target_net.load_state_dict(self.net.state_dict(), strict=False)
+
         if done:
             self.num_episodes += 1
             # save and reset the network
