@@ -28,7 +28,10 @@ def critic_init(n_input): return defaultdict(policy_init(n_input))
 #     def step(self, fn_q,  
 
 def numpfy(a_dict): return np.array(flatten(a_dict.values()))
-class DistActorCritic(object):
+def softmax(x): return np.exp(x) / np.sum(np.exp(x), axis=-1)
+def compl(x, elem, pos): x[pos] = elem; return x
+
+class DistributedActorCritic(object):
     def __init__(
             self,
             phases,
@@ -65,10 +68,8 @@ class DistActorCritic(object):
         self.gamma = gamma # discount factor
 
         # Dac parameters
-        self.mu0 = np.random.randn((self.n_agents))
-        self.mu1 = np.random.randn((self.n_agents))
-        self.w0 = np.random.randn((self.n_agents, self.n_inputs)) 
-        self.w1 = np.random.randn((self.n_agents, self.n_inputs)) 
+        self.mu = np.random.randn((self.n_agents))
+        self.w = np.random.randn((self.n_agents, self.n_actions, self.n_inputs)) 
         self.theta = np.random.randn((self.n_agents, n_actions, self.n_inputs)) 
 
         self.reset()
@@ -76,10 +77,6 @@ class DistActorCritic(object):
     @property
     def value(self):
         return self._value
-
-    @property
-    def policy(self):
-        return self._policy
 
     @property
     def eps(self):
@@ -93,66 +90,86 @@ class DistActorCritic(object):
         self.n_steps = 0
 
     def act(self, state):
-        state = flatten(state.values())
-        actions = [self.policy[tl_id](state) for tl_id in self.tl_ids]
-        return actions
+        if isinstance(state, dict): state = numpfy(state) 
+        return self.policy(state, choice=True)
 
     # TODO: move flatten operation to a decorator.
     def update(self, state, actions, reward, next_state)
-        state = numpfy(state)
-        actions = numpfy(actions)
-        reward = numpfy(reward)
+        state = numpfy(state)       # [n_inputs]
+        actions = numpfy(actions)   # [n_agent]
+        reward = numpfy(reward)     # [n_agent]
         next_state = numpfy(next_state)
 
+        # auxiliary variables
+        next_mu = np.zeros((self.n_agents,), dtype=float) # next_step_mu
+        w = np.zeros_like(self.w) # weights before consensus
+
+        # 1. Observe state next_state and reward
         # Update mu and execute actions.
-        for ntl in range(self.n_agents):
-            self.mu1[ntl] = (1 - self.alpha) * self.mu0[ntl] + self.alpha * reward[ntl]
-            # TODO: implement policy
-            next_actions[tl] = self.policy[tl](state)
+        # for ntl in range(self.n_agents):
+        next_mu = (1 - self.alpha) * self.mu + self.alpha * reward
 
-        # Update 
-        for ntl in range(self.n_agents):
-            delta = reward[ntl] - self.mu0[tl] + self.q(next_state, ntl) - self.q(state, ntl)  
-            # Critic step
-            self.w1[ntl] = self.w0[ntl] + self.alpha * delta * self.grad_q(state, ntl)
+        # 2. Observe joint actions
+        next_actions = self.act(next_state) 
+        # actuate on environment
 
-            # Actor step
-            adv = self.advantage(state, action)
-            ksi = self.grad_policy(state, action, ntl)
+        # 3. Update 
+        # for ntl in range(self.n_agents):
+        delta = reward - self.mu + self.q(next_state) - self.q(state)  
+        # Critic step
+        w = self.w + self.alpha * delta * self.grad_q(state)
 
+        # Actor step
+        adv = self.advantage(state, actions)
+        ksi = self.grad_policy(state, actions)
+        self.theta += self.beta * adv * ksi
+
+        # TODO: consensus step.
         self.num_steps += 1
         self._eps -= self._eps_decrement
             
 
-    def q(self, state, n_agent):
-        return self.w0[n_agent].dot(state)
+    def q(self, state, actions=None):
+        # [n_agents, n_actions, n_inputs] * [n_inputs]
+        q = self.w @ state  # [n_agents, n_actions]
+        if actions is None: return q
+        # [n_agents]
+        return q[:, actions]
 
-    def grad_q(self, state, n_agent):
-        return state
+    def grad_q(self, state):
+        return np.tile(state, (self.n_agents, 1))
 
-    def policy(self, state, ntl):
+    def policy(self, state, choice=False):
         # gibbs distribution / Boltzman policies.
-        es = []
-        s_cum = 0
-        for n_a in range(self.n_actions):
-            theta = self.theta[ntl, n_a, :]
-            es.append(np.exp(np.max(theta_0.dot(state), 1e-8)))
-            s_cum += es[-1]  
-        return np.array(es) / s_cum
+        tol = 1e-8
 
-    def grad_policy(self, state, action, ntl):
-        pol = self.policy(state, ntl)
-        pol_cum = np.zeros((self.n_inputs,), dtype=float)
-        for n_a in range(self.n_agents):
-            pol_cum += pol[n_a] * self.theta[ntl, n_a, :]
-        ret = self.theta[ntl, action, :] - pol_cum
-        return ret
+        # [n_agent, n_actions, n_inputs]
+        phis = np.tile(state, (self.n_agents, self.n_actions, 1)) 
+        # [n_agent, n_actions, n_inputs]
+        thetas = self.theta
 
-    def advantage(self, state, action):
-        q_cum = 0 
-        pol = self.policy(state, ntl)
-        for atl in (0, 1):
-            _action = action; _action[ntl] = atl
-            q_cum += pol[atl]  * self.q(state, _action)
-        return self.q(state, action) - q_cum
+        # [n_agents, n_actions]
+        x = np.maximum(np.sum(thetas * phis, axis=-1), tol)
+
+        # [n_agents, n_actions]
+        probs = softmax(x)
+        if not choice: return probs
+        return np.choice(self.n_actions, replace=True, size=self.n_agents, p=probs)
+
+    def grad_policy(self, state, actions):
+        # [n_agents, n_actions]
+        phis = self.theta @ state
+
+        # [n_agents, n_actions]
+        probs = self.policy(state)
+
+        # [n_agents]
+        return phis[:, actions] - np.sum(phis * probs, axis=-1)
+
+    def advantage(self, state, actions):
+        # [n_agents, n_actions]
+        probs = self.policy(state)
+
+        # [n_agents]
+        return self.q(state, actions) - np.sum(probs * self.q(state), axis=-1)
 
