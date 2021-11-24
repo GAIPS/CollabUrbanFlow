@@ -9,7 +9,7 @@ from scipy.sparse import csr_matrix
 from utils.utils import flatten
 from utils import points2length
 
-def get_phases(roadnet):
+def get_phases(roadnet, filter_phases=[]):
     """ Forms a traffic light phase
 
     Parameters:
@@ -35,50 +35,58 @@ def get_phases(roadnet):
     >>> with open(roadnet_path, 'r') as f: roadnet = json.load(f)
     >>> incoming, outgoing, _ = get_phases(roadnet)
     """
+    # Defines loop constants.
     incoming = {}
     outgoing = {}
     speed_limit = {}
     roads = roadnet['roads']
     intersections = [intr for intr in roadnet['intersections'] if not intr['virtual']]
+    # Defines helper functions
+    # fn: gets the name of roadlink y and intersection x
+    # gn: gets the relative lanelink of roadlink y of intersection
+    # sn: gets the max speed from road x, laneid y
+    def fn(x, y): return x['roadLinks'][y]['startRoad']
+    def gn(x, y): return x['roadLinks'][y]['laneLinks'][0]['startLaneIndex']
+    def hn(x, y): return x['roadLinks'][y]['endRoad']
+    def pn(x, y): return x['roadLinks'][y]['laneLinks'][0]['endLaneIndex']
+    def sn(x, y):
+        return [
+            ln for rd in roads if rd['id'] == x for ln in rd['lanes']
+        ][y]['maxSpeed']
+    # filter phases
+    def tn(x): return ((not any(filter_phases)) or (x in filter_phases))
     for intersection in intersections:
         lightphases = intersection['trafficLight']['lightphases']
         roadlinks_incoming = {}
         roadlinks_outgoing = {}
-        edges_max_speeds = {}
-        p = 0
+        max_speeds = {}
+        phase_num = 0
         for linkids in lightphases:
-            if any(linkids['availableRoadLinks']):
-                linkids = linkids['availableRoadLinks']
-                edges = []
-                edges_inverse = []
-                for linkid in linkids:
+            if any(linkids['availableRoadLinks']) and tn(phase_num):
+                roadlinks = []
+                roadlinks_reverse = []
+                for linkid in linkids['availableRoadLinks']:
                     # startRoad should be the roadlinks_incoming links.
-                    edgeid = intersection['roadLinks'][linkid]['startRoad']
-                    lanes = [lane for road in roads if road['id'] == edgeid
-                        for lane in road['lanes']]
-                    num_lanes = len(lanes)
-
-                    for lid in range(num_lanes):
-                        _edgeid = f'{edgeid}_{lid}'
-                        if _edgeid not in edges:
-                            edges.append(_edgeid)
-                            edges_max_speeds[_edgeid] = lanes[lid]['maxSpeed']
-
+                    roadlink = fn(intersection, linkid)
+                    laneid = gn(intersection, linkid)
+                    roadlinks.append(f'{roadlink}_{laneid}')
+                    max_speeds[roadlinks[-1]] = sn(roadlink, laneid)
 
                     # endRoad should be the roadlinks_outgoing links.
-                    roadlink = intersection['roadLinks'][linkid]
-                    edgeid = roadlink['endRoad']
-                    edges_inverse += [
-                        f"{edgeid}_{rl['endLaneIndex']}"
-                        for rl in roadlink['laneLinks']
-                    ]
-                roadlinks_incoming[p] = edges
-                roadlinks_outgoing[p] = list(set(edges_inverse))
-                p += 1
+                    roadlink_reverse = hn(intersection, linkid)
+                    laneid_reverse = pn(intersection, linkid)
+                    roadlinks_reverse.append(f'{roadlink_reverse}_{laneid_reverse}')
+                roadlinks_incoming[phase_num] = roadlinks
+                roadlinks_outgoing[phase_num] = list(set(roadlinks_reverse))
+
+            phase_num += int(any(linkids['availableRoadLinks']))
         incoming[intersection['id']] = roadlinks_incoming
         outgoing[intersection['id']] = roadlinks_outgoing
-        speed_limit[intersection['id']] = edges_max_speeds
+
+        speed_limit[intersection['id']] = max_speeds
+
     return incoming, outgoing, speed_limit
+
 
 def get_neighbors(incoming, outgoing):
     """Reads incoming and outgoing

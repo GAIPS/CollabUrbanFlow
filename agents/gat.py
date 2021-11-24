@@ -1,34 +1,29 @@
-# Copyright The PyTorch Lightning team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-"""Deep Reinforcement Learning: Deep Q-network (DQN)
+"""Deep Reinforcement Learning for Multi-agent system.
 
-The template illustrates using Lightning for Reinforcement Learning. The example builds a basic DQN using the
-classic CartPole environment.
+    Graph Attention Reinforcement Learning
 
-To run the template, just run:
-`python reinforce_learn_Qnet.py`
+    Paradigms:
+    ---------
+    * Parameter Sharing: att, W.
+    * Centralized Training: Decentralized Execution.
+    * Learning to communicate: Sends message to agents.
 
-After ~1500 steps, you will see the total_reward hitting the max score of 475+.
-Open up TensorBoard to see the metrics:
+    To run a template:
+    1) set agent_type = GATW
+    >>> python models/train.py
+    >>> tensorboard --logdir lightning_logs
 
-`tensorboard --logdir default`
 
-References
-----------
+    TODO:
+    ----
+    * Move adjacency matrix to module.
 
-[1] https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On-
-Second-Edition/blob/master/Chapter06/02_dqn_pong.py
+    References:
+    -----------
+    `Graph attention networks. 2017`
+    https://arxiv.org/abs/1710.10903
+    Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Lio, and Yoshua Bengio. 2017.
+    https://github.com/Diego999/pyGAT/blob/master/train.py
 """
 
 import argparse
@@ -188,10 +183,11 @@ class GATLightning(pl.LightningModule):
 
 
         self.n_agents = len(self.env.tl_ids)
-        self.n_input = 4
-        self.n_embeddings = 8
-        self.n_hidden = 16
-        self.n_heads = 3
+
+        self.n_input = self.env.num_phases + 2
+        self.n_embeddings = 16
+        self.n_hidden = 32
+        self.n_heads = 5
         self.n_output = 2
 
         # Auxiliary variables
