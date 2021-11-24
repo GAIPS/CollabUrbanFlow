@@ -126,11 +126,8 @@ class GraphAttentionLayer(nn.Module):
 
         # zij = eij if j --> i
         # zij = epsilon otherwise, -9e15
-        try:
-            zero_vec = -9e15 * torch.ones_like(e)
-            z = torch.where(adj > 0, e, zero_vec)
-        except Exception:
-            import ipdb; ipdb.set_trace()
+        zero_vec = -9e15 * torch.ones_like(e)
+        z = torch.where(adj > 0, e, zero_vec)
         alpha = F.softmax(z, dim=-1)
 
         Whc = torch.matmul(h, self.Wc)

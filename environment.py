@@ -6,6 +6,10 @@
     * Observes traffic data and transforms into features.
     * Logs past observations
     * Produces features: Delay and pressure.
+    
+    Limitations:
+    ------------
+    * Supports intersections with fixed number of phases.
 
 '''
 from functools import lru_cache
@@ -15,6 +19,7 @@ import os
 import numpy as np
 from tqdm import tqdm
 from tqdm.auto import trange
+from functools import cached_property
 
 from features import compute_delay, compute_pressure
 from utils.network import get_phases
@@ -65,17 +70,14 @@ class Environment(object):
         self.step_size = step_size
 
         # Roadnet
-        _inc, _out, _lmt = get_phases(roadnet)
-        self._incoming_roadlinks = _inc
-        self._outgoing_roadlinks = _out
-        self._speed_limit = _lmt
+        self._inc, self._out, self._lim = get_phases(roadnet, filter_phases=[0, 1, 2, 3])
 
         # Loop control
         self._episode_timestep = episode_timesteps
 
         # Emissions
+        self.emit = emit
         self._emissions = []
-        self._emit = emit
         self.info_dict = defaultdict(list)
 
         if feature not in FEATURE_CHOICE:
@@ -111,39 +113,32 @@ class Environment(object):
         return self.timestep >= self._episode_timestep
 
     @property
-    def emit(self):
-        return self._emit
-
-    @emit.setter
-    def emit(self, emit):
-        self._emit = emit
-        
-    @property
     def emissions(self):
         return self._emissions
 
-    @property
+    @cached_property
     def tl_ids(self):
         return sorted(self.phases.keys())
 
-    @property
-    def phases(self):
-        return self._incoming_roadlinks
+    @cached_property
+    def phases(self): return self._inc
 
-    @property
-    def incoming_roadlinks(self):
-        return self._incoming_roadlinks
+    @cached_property
+    def num_phases(self):
+        # It should be fixed
+        assert len(set([len(phase) for phase in self.phases.values()])) == 1
+        return len(next(iter(self.phases.values())))
 
-    @property
-    def outgoing_roadlinks(self):
-        return self._outgoing_roadlinks
+    @cached_property
+    def incoming_roadlinks(self): return self._inc
 
-    @property
-    def max_speeds(self):
-        return self._speed_limit
+    @cached_property
+    def outgoing_roadlinks(self): return self._out
+
+    @cached_property
+    def max_speeds(self): return self._lim
 
     """ Dynamic properties are cached"""
-
     @property
     def vehicles(self):
         return self._get_lane_vehicles(self.timestep)

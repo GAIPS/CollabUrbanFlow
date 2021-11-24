@@ -183,7 +183,8 @@ class GATLightning(pl.LightningModule):
 
 
         self.n_agents = len(self.env.tl_ids)
-        self.n_input = 4
+
+        self.n_input = self.env.num_phases + 2
         self.n_embeddings = 16
         self.n_hidden = 32
         self.n_heads = 5
