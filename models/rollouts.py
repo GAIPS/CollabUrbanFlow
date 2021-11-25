@@ -74,6 +74,10 @@ def main(test_config_path=None):
 
     seed_everything(seed)
     env = Environment(network, roadnet, eng, episode_timesteps=rollout_time)
+
+    #TODO: Make a special config section for the env.
+    env = Environment(network, roadnet, eng,
+        episode_timesteps=rollout_time, yellow=0, min_green=10)
     approx = TileCodingApproximator(roadnet, flows)
 
     # TODO: nets are approximators -- make load_agent produce the two. 

@@ -246,14 +246,15 @@ class Environment(object):
             current_phase, current_time = active_phases
             current_action = actions[tl_id]
             phase_ctrl = None
-            if current_time == self.yellow and self.timestep > 5:
+            if (self.yellow > 0 and current_time == self.yellow) and self.timestep > 5:
                 # transitions to green: y -> G
                 phase_ctrl = 2 * (current_phase - 1)
 
             elif (current_time >= self.yellow + self.min_green and current_action == 1) or \
                     (current_time == self.max_green):
                 # transitions to yellow: G -> y
-                phase_ctrl = 2 * (current_phase - 1) + 1
+                # if yellow is zero; go to next green.
+                phase_ctrl = 2 * (current_phase - 1) + int(self.yellow > 0)
 
                 # adjust log
                 next_phase = (current_phase % len(phases))

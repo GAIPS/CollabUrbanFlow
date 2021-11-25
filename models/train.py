@@ -52,7 +52,10 @@ def main(train_config_path=TRAIN_CONFIG_PATH):
 
     eng = engine_create(network, seed=seed, thread_num=4)
     config, flows, roadnet = engine_load_config(network) 
-    env = Environment(network, roadnet, eng, episode_timesteps=save_agent_interval)
+
+    #TODO: Make a special config section for the env.
+    env = Environment(network, roadnet, eng,
+        episode_timesteps=save_agent_interval, yellow=0, min_green=10)
 
     np.random.seed(seed)
     expr_path = expr_path_create(network)
