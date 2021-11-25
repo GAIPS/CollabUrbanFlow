@@ -23,6 +23,7 @@ sys.path.append(Path.cwd().as_posix())
 from utils.file_io import parse_train_config
 
 import pandas as pd
+from utils.plots import episodic_breakdown
 
 import statsmodels.api as sm
 
@@ -96,16 +97,19 @@ def resample(data, column, freq=6, to_records=True):
    df = pd.DataFrame.from_dict(data[column])
    index = pd.DatetimeIndex(df.index)
    df.index = index
+   
 
    if column in ('rewards',):
        df = df.resample(f'{freq}n').sum()
+   elif column in ('timesteps'):
+       df = df.resample(f'{freq}n').asfreq()
    elif column in ('actions', 'velocities', 'vehicles'):
        df = df.resample(f'{freq}n').mean()
    else:
        raise ValueError
 
    if to_records:
-       if column in ('vehicles', 'velocities'):
+       if column in ('vehicles', 'velocities', 'timesteps'):
            return df.to_dict(orient='list')[0]
        return df.to_dict(orient='records')
    else:
@@ -134,7 +138,7 @@ def main(experiment_root_folder=None):
 
     experiment_time = args['experiment_time']
     episode_time = args['experiment_save_agent_interval']
-    total_episodes = int(experiment_time / episode_time)
+    n_episodes = int(experiment_time / episode_time)
     agent_type = args['agent_type']
 
     actions = []
@@ -143,6 +147,7 @@ def main(experiment_root_folder=None):
     rewards2 = []
     vehicles = []
     velocities = []
+    timesteps = []
 
     # Concatenate data for all runs.
     for run_name in train_files:
@@ -152,7 +157,6 @@ def main(experiment_root_folder=None):
         # Load JSON data.
         with open(run_name) as f:
             data = json.load(f)
-        # episodic_breakdown(data, total_episodes)
 
         # Rewards per time-step.
         rewards1.append(resample(data, 'rewards', to_records=False))
@@ -169,12 +173,13 @@ def main(experiment_root_folder=None):
         # Agent's actions.
         actions.append(resample(data, 'actions'))
 
+        timesteps.append(resample(data, 'timesteps'))
+
     """
         Rewards per cycle.
         (GLOBAL: sum of the reward for all intersections).
     """
     rewards = np.array(rewards1)
-    episode = int(rewards.shape[1] / total_episodes)
 
 
     fig = plt.figure()
@@ -212,6 +217,47 @@ def main(experiment_root_folder=None):
     plt.close()
 
     """
+        Average rewards per episode
+        * average over episode (sampled) length.
+        * average over different runs per episode.
+        
+    """
+    # slice rewards
+    episodic_rewards = episodic_breakdown(rewards, timesteps)
+
+    fig = plt.figure()
+    fig.set_size_inches(FIGURE_X, FIGURE_Y)
+
+
+    X = np.linspace(1, episodic_rewards.shape[1], episodic_rewards.shape[1])
+    # for eps in range(0, 3):
+    #     start = eps * episode
+    #     finish = start + episode
+    #     xx = rewards[:, start:finish]
+    Y = np.average(episodic_rewards, axis=0)
+    Y_std = np.std(episodic_rewards, axis=0)
+    # print(fn(eps))
+
+    lowess = sm.nonparametric.lowess(Y, X, frac=0.10)
+    # plt.plot(X,Y, label=f'Mean {fn(eps)}', c=MEAN_CURVE_COLOR)
+    plt.plot(X,Y, label=f'Mean', c=MEAN_CURVE_COLOR)
+    plt.plot(X,lowess[:,1], c=SMOOTHING_CURVE_COLOR, label='Smoothing')
+
+    if  episodic_rewards.shape[0] > 1:
+        plt.fill_between(X, Y-Y_std, Y+Y_std, color=STD_CURVE_COLOR, label='Std')
+
+    plt.xlabel('Episodes')
+    plt.ylabel('Average Reward per Episode')
+    plt.legend(loc=4)
+
+    file_name = '{0}/rewards_per_episode.pdf'.format(output_folder_path)
+    plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
+    file_name = '{0}/rewards_per_episode.png'.format(output_folder_path)
+    plt.savefig(file_name, bbox_inches='tight', pad_inches=0)
+    
+    plt.close()
+
+    """
         Rewards per intersection.
     """
 
@@ -229,7 +275,6 @@ def main(experiment_root_folder=None):
 
     by_row_index = df_concat.groupby(df_concat.index)
     df_rewards = by_row_index.mean()
-
 
     window_size = min(len(df_rewards)-1, 20)
 
@@ -360,4 +405,5 @@ def main(experiment_root_folder=None):
         
 
 if __name__ == '__main__':
-    main()
+    opts = get_arguments()
+    main(opts.path)

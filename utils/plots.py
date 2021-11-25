@@ -1,3 +1,5 @@
+import numpy as np
+
 def resample(data, column, freq=6, to_records=True):
     """ Resample dataframe 
 
@@ -49,15 +51,20 @@ def resample(data, column, freq=6, to_records=True):
 
     return ret
 
-def episodic_breakdown(data, timesteps, drop=100): 
+def episodic_breakdown(data, timesteps, drop=0): 
     """Breaks data down into evenly spaced episodes"""
-    ts = max(min(timesteps), drop)
-    tf = max(timesteps)
-    starts = [i for i, t in enumerate(timesteps) if t == ts]
-    finishes = [i for i, t in enumerate(timesteps) if t == tf]
-    separators = zip(starts, finishes) 
-    for k, v in data.items():
-        d = []
-        for start, finish in separators:
-            d.append(v[start:finish])
-        data[k] = d
+    # should be a row containing the samples.
+    batches = []
+    for steps, values in zip(timesteps, data):
+        episodes = []
+        start = 0
+        finish = 0
+        for this, nxt in zip(steps[:-1], steps[1:]):
+            if nxt > this:
+                finish += 1
+            else:
+                episodes.append(np.mean(values[start:finish]))
+                start = finish
+        episodes.append(np.mean(values[start:]))
+        batches.append(np.array(episodes))
+    return np.stack(batches) 
