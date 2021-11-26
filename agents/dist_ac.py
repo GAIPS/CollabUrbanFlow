@@ -12,6 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+np.seterr(all='raise')
 
 # Uncoment to run stand alone script.
 import sys
@@ -24,11 +25,11 @@ def seq(gen): return [val for val in ufl(gen)]
 def vectorize(a_dict): return np.stack(seq(a_dict.values()))
 def softmax(x): return np.exp(x) / np.sum(np.exp(x), keepdims=True, axis=-1)
 def replace(x, pos, elem): x[pos] = elem; return x
-def take_column(x, y): return np.take_along_axis(x, y, 1)
 def unsqueeze(x): return np.expand_dims(x, 1)
-def gather(x, y): return take_column(x, unsqueeze(y)).squeeze(-1)
+def gather(x, y): return x[np.arange(x.shape[0]), y]
 def tile(x, n, k): return np.tile(x, (n, k, 1)).T
 def clip(x): return np.minimum(np.maximum(x, -1e-8), 50)
+def norm(x): return x / np.linalg.norm(x)
 
 # x is 1dim array should be [i, j, k]
 def tiler(x, i=None, j=None, k=None):
@@ -36,6 +37,18 @@ def tiler(x, i=None, j=None, k=None):
     if i is not None and j is not None: return np.tile(x, (i, j, 1))
     if k is not None: return np.tile(x, (k, 1)).T
     if i is not None: return np.tile(x, (i, 1))
+
+def adjacency_to_consensus(adjacency):
+    # 1. Compute laplacian
+    eye = np.eye(*adjacency.shape) 
+    degree = np.diag(np.sum(adjacency, axis=1) - 1)
+    laplacian = degree - (adjacency - eye)
+    # 2. Compute alpha
+    eig, _ = np.linalg.eig(laplacian)
+    alpha = 2 /(eig[0] + eig[-2])
+    # 3. Consensus
+    consensus = eye - alpha * laplacian
+    return consensus
 
 class DistributedActorCritic(object):
     def __init__(
@@ -57,7 +70,7 @@ class DistributedActorCritic(object):
         self.n_agents = len(self.tl_ids)
         self.n_inputs = self.n_agents * 4
         self.n_actions = 2
-        self.c = adjacency_matrix
+        self.C = adjacency_to_consensus(adjacency_matrix)
 
         # Exploration & Exploitation
         assert epsilon_init >= epsilon_final
@@ -79,7 +92,6 @@ class DistributedActorCritic(object):
         self.mu = np.random.randn((self.n_agents))
         self.w = np.random.randn(*n_parameters) 
         self.theta = np.random.randn(*n_parameters) 
-
         self.reset()
 
     @property
@@ -99,42 +111,40 @@ class DistributedActorCritic(object):
 
     # TODO: move flatten operation to a decorator.
     def update(self, state, actions, reward, next_state):
+        # 1. Preprocessing
+        # transform from dict to vector.
         state = vectorize(state)       # [n_inputs]
         actions = vectorize(actions)   # [n_agent]
         reward = vectorize(reward)     # [n_agent]
         next_state = vectorize(next_state)
 
+        # normalize L2
+        x = norm(state); y = norm(next_state)
+
+        # auxiliary indices
         ii = np.arange(self.n_agents)
         jj = actions
+        
+        # 2. Act and gather MAS' actions.
+        next_actions = self.act(y)
 
-        # auxiliary variables
-        next_mu = np.zeros((self.n_agents,), dtype=float) # next_step_mu
-        # w = np.zeros_like(self.w) # weights before consensus
-
-        # 1. Observe state next_state and reward
-        # Update mu and execute actions.
-        # Execute this line before calling self.update(.)
-        # next_mu = (1 - self.alpha) * self.mu + self.alpha * reward
-
-        # 2. Observe joint actions
-        next_actions = self.act(next_state)
-
-        # actuate on environment
-        # 3. Update 
-        # [n_agents] --> [n_agents, n_actions, n_inputs]
-        delta = reward - self.mu + self.q(next_state, next_actions) - self.q(state, actions) 
-        delta = tiler(delta, j=self.n_inputs, k=self.n_actions)
+        # 3. Compute time-difference delta
+        # [n_agents] --> [n_agents, 1]
+        delta_q = self.q(y, next_actions) - self.q(x, actions)
+        delta = unsqueeze(reward - self.mu + delta_q)
 
         # Critic step
-        weights = self.w + self.alpha * delta * self.grad_q(state)
+        # [n_agents, n_inputs]
+        grad_q = self.grad_q(x)
+        weights = self.w[ii, jj, :] + self.alpha * (delta * grad_q)
 
         # Actor step
-        adv = unsqueeze(self.advantage(state, actions))    # [n_agents, 1]
-        ksi = self.grad_policy(state, actions)             # [n_agents, n_inputs]
+        adv = unsqueeze(self.advantage(x, actions))    # [n_agents, 1]
+        ksi = self.grad_policy(x, actions)             # [n_agents, n_inputs]
         self.theta[ii, jj, :] += (self.beta * adv * ksi)   # [n_agents, n_inputs]
 
         # Consensus step: broadcast weights
-        self.w = np.einsum('ij, jkl -> ikl', self.c, weights)
+        self.w[ii, jj, :] = self.C @ weights
         self.mu = (1 - self.alpha) * self.mu + self.alpha * reward
         self.n_steps += 1
 
@@ -156,9 +166,9 @@ class DistributedActorCritic(object):
             Returns:
             --------
             * state: np.array(<float>)
-            3-dim np.array(<n_agents, n_actons, n_inputs>)
+            2-dim np.array(<n_agents, n_inputs>)
         '''
-        return tiler(state, i=self.n_agents, j=self.n_actions)
+        return tiler(state, i=self.n_agents)
 
     def policy(self, state, choice=False):
         '''Policy pi(a | s)
@@ -172,8 +182,9 @@ class DistributedActorCritic(object):
             
             Returns:
             --------
-            * state: np.array(<float>)
-            3-dim np.array(<n_agents, n_actons, n_inputs>)
+            * distribution or actions: np.array
+            if choice: actions: 1-dim np.array(<int>)
+            else distribution: 2-dim np.array(<n_agents, n_actions>)
         '''
         # gibbs distribution / Boltzman policies.
         # vectorize state
@@ -187,6 +198,7 @@ class DistributedActorCritic(object):
 
         # [n_agents, n_actions]
         probs = softmax(x)
+        if not choice: return probs
         return np.array([np.random.choice(self.n_actions, p=p) for p in probs])
 
     def grad_policy(self, state, actions):
@@ -205,7 +217,6 @@ class DistributedActorCritic(object):
     def advantage(self, state, actions):
         # [n_agents, n_actions]
         probs = self.policy(state)
-
         # [n_agents]
         return self.q(state, actions) - np.sum(probs * self.q(state), axis=-1)
 
@@ -251,6 +262,7 @@ if __name__ == '__main__':
         [0, 1, 1],
     ])
 
+    consensus = adjacency_to_consensus(adj)
     epsilon_init = 0.8
     epsilon_final = 0.01
     epsilon_timesteps = 3600
@@ -260,14 +272,15 @@ if __name__ == '__main__':
         epsilon_final, epsilon_timesteps
     )
     distributed_actions = dac.policy(states, choice=False)
-
     next_actions = dac.policy(states, choice=True)
 
     advantage = dac.advantage(vectorize(states), vectorize(actions))
 
     ksi = dac.grad_policy(vectorize(states), vectorize(actions))
+    N = 100000
 
-    
-    # for i in range(10000):
-    dac.update(states, actions, rewards, next_states)
-    
+    try:
+        for i in range(N):
+            dac.update(states, actions, rewards, next_states)
+    except Exception:
+        import ipdb; ipdb.set_trace()
