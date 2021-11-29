@@ -10,6 +10,7 @@ from copy import deepcopy
 from operator import itemgetter
 from collections import defaultdict
 from pathlib import Path
+import dill
 
 import numpy as np
 np.seterr(all='raise')
@@ -29,7 +30,7 @@ def unsqueeze(x): return np.expand_dims(x, 1)
 def gather(x, y): return x[np.arange(x.shape[0]), y]
 def tile(x, n, k): return np.tile(x, (n, k, 1)).T
 def clip(x): return np.minimum(np.maximum(x, -1e-8), 50)
-def norm(x): return x / np.linalg.norm(x)
+def norm(x): nx = np.linalg.norm(x); return x / nx if nx > 0 else x
 
 # x is 1dim array should be [i, j, k]
 def tiler(x, i=None, j=None, k=None):
@@ -107,7 +108,7 @@ class DistributedActorCritic(object):
 
     def act(self, state):
         if isinstance(state, dict): state = vectorize(state) 
-        return self.policy(state, choice=True)
+        return dict(zip(self.tl_ids,self.policy(state, choice=True)))
 
     # TODO: move flatten operation to a decorator.
     def update(self, state, actions, reward, next_state):
@@ -126,7 +127,7 @@ class DistributedActorCritic(object):
         jj = actions
         
         # 2. Act and gather MAS' actions.
-        next_actions = self.act(y)
+        next_actions = self.policy(y, choice=True)
 
         # 3. Compute time-difference delta
         # [n_agents] --> [n_agents, 1]
@@ -153,7 +154,11 @@ class DistributedActorCritic(object):
         qval = self.w @ state  # [n_agents, n_actions]
         if actions is None: return qval
         # [n_agents]
-        return gather(qval, actions)
+        try:
+            gat = gather(qval, actions)
+        except Exception:
+            import ipdb; ipdb.set_trace()
+        return gat 
 
     def grad_q(self, state):
         '''Gradient of the Q-function
@@ -228,6 +233,25 @@ class DistributedActorCritic(object):
 
         # [n_agents]
         return self.q(state, actions) - np.sum(probs * self.q(state), axis=-1)
+
+    """ Serialization """
+    # Serializes the object's copy -- sets get_wave to null.
+    def save_checkpoint(self, chkpt_dir_path, chkpt_num):
+        class_name = type(self).__name__.lower()
+        file_path = Path(chkpt_dir_path) / chkpt_num / f'{class_name}.chkpt'  
+        file_path.parent.mkdir(exist_ok=True)
+        with open(file_path, mode='wb') as f:
+            dill.dump(self, f)
+
+    # deserializes object -- except for get_wave.
+    @classmethod
+    def load_checkpoint(cls, chkpt_dir_path, chkpt_num):
+        class_name = cls.__name__.lower()
+        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'{class_name}.chkpt'  
+        with file_path.open(mode='rb') as f:
+            new_instance = dill.load(f)
+
+        return new_instance
 
 if __name__ == '__main__':
     phases = {
