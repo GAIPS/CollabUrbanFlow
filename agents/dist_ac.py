@@ -96,11 +96,11 @@ class DistributedActorCritic(object):
 
     @property
     def eps(self):
-        if not self._explore: return 0.0
-        return max(self._eps_final, self._eps_init - self._eps_dec * self.n_steps)
+        if not self._eps_explore: return 0.0
+        return max(self._eps_final, self._eps_init + self._eps_dec * self.n_steps)
 
     def stop(self):
-        self._explore = False
+        self._eps_explore = False
 
     def reset(self):
         self.n_steps = 0
@@ -199,7 +199,15 @@ class DistributedActorCritic(object):
         # [n_agents, n_actions]
         probs = softmax(x)
         if not choice: return probs
-        return np.array([np.random.choice(self.n_actions, p=p) for p in probs])
+
+        # Epsilon greedy
+        probs[:, -1] += 1e-8     # break ties
+        likely_probs = np.amax(probs, axis=1, keepdims=True) 
+        eps0 = 1 - (self.eps * (self.n_actions - 1)) / self.n_actions
+        eps1 = self.eps / self.n_actions
+
+        eps_greedy = np.where(probs==likely_probs, eps0, eps1) 
+        return np.array([np.random.choice(self.n_actions, p=p) for p in eps_greedy])
 
     def grad_policy(self, state, actions):
         # [n_agents]
@@ -217,6 +225,7 @@ class DistributedActorCritic(object):
     def advantage(self, state, actions):
         # [n_agents, n_actions]
         probs = self.policy(state)
+
         # [n_agents]
         return self.q(state, actions) - np.sum(probs * self.q(state), axis=-1)
 
@@ -279,8 +288,5 @@ if __name__ == '__main__':
     ksi = dac.grad_policy(vectorize(states), vectorize(actions))
     N = 100000
 
-    try:
-        for i in range(N):
-            dac.update(states, actions, rewards, next_states)
-    except Exception:
-        import ipdb; ipdb.set_trace()
+    for i in range(N):
+        dac.update(states, actions, rewards, next_states)
