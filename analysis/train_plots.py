@@ -20,7 +20,7 @@ from pathlib import Path
 import configparser
 import sys
 sys.path.append(Path.cwd().as_posix())
-from utils.file_io import parse_train_config
+from utils.file_io import parse_train_parameters
 
 import pandas as pd
 from utils.plots import episodic_breakdown
@@ -134,12 +134,12 @@ def main(experiment_root_folder=None):
 
     # Get episode_time and total_episodes.
     train_config_path = list(Path(experiment_root_folder).rglob('train.config'))[0]
-    args = parse_train_config(train_config_path)
+    args = parse_train_parameters(train_config_path)
 
-    experiment_time = args['experiment_time']
-    episode_time = args['experiment_save_agent_interval']
+    experiment_time = args.experiment_time
+    episode_time = args.save_agent_interval
     n_episodes = int(experiment_time / episode_time)
-    agent_type = args['agent_type']
+    agent_type = args.agent_type
 
     actions = []
     rewards = []
@@ -301,7 +301,7 @@ def main(experiment_root_folder=None):
     #     finish = start + episode
         
     vehs = np.array([v for v in vehicles])
-
+    X = np.linspace(1, vehs.shape[1], vehs.shape[1])
 
     Y = np.average(vehs, axis=0)
     Y_std = np.std(vehs, axis=0)
@@ -338,6 +338,7 @@ def main(experiment_root_folder=None):
     #     finish = start + episode
 
     vels = np.array([v for v in velocities])
+    X = np.linspace(1, vels.shape[1], vels.shape[1])
 
     Y = np.average(vels, axis=0)
     Y_std = np.std(vels, axis=0)

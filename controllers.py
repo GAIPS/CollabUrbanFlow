@@ -159,18 +159,18 @@ class Webster:
         for tid in self._tls_phases:
             timings = []
 
-            num_phases = len(self._tls_phases[tid])
+            n_phases = len(self._tls_phases[tid])
 
             # Calculate ratios.
-            ratios = [1 / num_phases for p in range(num_phases)]
+            ratios = [1 / n_phases for p in range(n_phases)]
 
             # Calculate phases durations given allocation ratios.
-            phases_durations = [np.around(r * (self._cycle_time - 6.0 * num_phases)) for r in ratios]
+            phases_durations = [np.around(r * (self._cycle_time - 6.0 * n_phases)) for r in ratios]
 
             # Calculate timings.
             counter = 0
             timings = []
-            for p in range(num_phases):
+            for p in range(n_phases):
                 timings.append(counter + phases_durations[p])
                 timings.append(counter + phases_durations[p] + 6.0)
                 counter += phases_durations[p] + 6.0
@@ -255,7 +255,7 @@ class Webster:
                             max_count = max(max_count, lane_count)
                     max_counts.append(max_count)
 
-                num_phases = len(max_counts)
+                n_phases = len(max_counts)
 
                 if min(max_counts) < 2:
 
@@ -273,12 +273,12 @@ class Webster:
                     ratios = [p/sum(max_counts) for p in max_counts]
 
                     # Calculate phases durations given allocation ratios.
-                    phases_durations = [np.around(r*(self._cycle_time-6.0*num_phases)) for r in ratios]
+                    phases_durations = [np.around(r*(self._cycle_time-6.0*n_phases)) for r in ratios]
 
                     # Calculate timings.
                     counter = 0
                     timings = []
-                    for p in range(num_phases):
+                    for p in range(n_phases):
                         timings.append(counter + phases_durations[p])
                         timings.append(counter + phases_durations[p] + 6.0)
                         counter += phases_durations[p] + 6.0
@@ -295,12 +295,12 @@ class Webster:
                     ratios = [p/sum(max_counts) for p in max_counts]
 
                     # Calculate phases durations given allocation ratios.
-                    phases_durations = [np.around(r*(self._cycle_time-6.0*num_phases)) for r in ratios]
+                    phases_durations = [np.around(r*(self._cycle_time-6.0*n_phases)) for r in ratios]
 
                     # Calculate timings.
                     counter = 0
                     timings = []
-                    for p in range(num_phases):
+                    for p in range(n_phases):
                         timings.append(counter + phases_durations[p])
                         timings.append(counter + phases_durations[p] + 6.0)
                         counter += phases_durations[p] + 6.0
@@ -365,18 +365,18 @@ class Webster:
                         max_count = max(max_count, lane_count)
                 max_counts.append(max_count)
 
-            num_phases = len(max_counts)
+            n_phases = len(max_counts)
 
             # Calculate ratios.
             ratios = [p/sum(max_counts) for p in max_counts]
 
             # Calculate phases durations given allocation ratios.
-            phases_durations = [np.around(r*(self._cycle_time-6.0*num_phases)) for r in ratios]
+            phases_durations = [np.around(r*(self._cycle_time-6.0*n_phases)) for r in ratios]
 
             # Calculate timings.
             counter = 0
             timings = []
-            for p in range(num_phases):
+            for p in range(n_phases):
                 timings.append(counter + phases_durations[p])
                 timings.append(counter + phases_durations[p] + 6.0)
                 counter += phases_durations[p] + 6.0

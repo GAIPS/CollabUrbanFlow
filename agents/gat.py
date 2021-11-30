@@ -96,6 +96,7 @@ class Agent:
         """
         # actions = {}
         n_agents = len(self.env.tl_ids)
+
         state = torch.tensor([self.state]).reshape((n_agents, -1)).to(device)
 
         actions = net(state).argmax(dim=-1).clone().detach().cpu().numpy()
@@ -160,35 +161,37 @@ class GATLightning(pl.LightningModule):
     )
     """
 
-    def __init__(self, env, device, replay_size=200, warm_start_steps=0,
-                 gamma=0.98, epsilon_init=1.0, epsilon_final=0.01, epsilon_timesteps=3500,
-                 sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
+    def __init__(self, env, device, train_args, replay_size=200, warm_start_steps=0,
+                 gamma=0.98, sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs):
         super().__init__(**kwargs)
         self.automatic_optimization = False
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
-        self.epsilon_init = epsilon_init
-        self.epsilon_final = epsilon_final
-        self.epsilon_timesteps = epsilon_timesteps
+        self.train_args = train_args
         self.sync_rate = sync_rate
         self.lr = lr
         self.episode_timesteps = episode_timesteps
         self.batch_size = batch_size
 
+        # Train args
+        self.epsilon_init = train_args.epsilon_init
+        self.epsilon_final = train_args.epsilon_final
+        self.epsilon_timesteps = train_args.epsilon_timesteps
+
         self.env = env
         self.save_path = save_path
         self.num_episodes = 0
 
-
+        # TODO: mdp_args
         self.n_agents = len(self.env.tl_ids)
+        self.n_input = self.env.n_features
 
-        self.n_input = self.env.num_phases + 2
-        self.n_embeddings = 16
+        self.n_embeddings = 32
         self.n_hidden = 32
         self.n_heads = 5
-        self.n_output = 2
+        self.n_output = self.env.n_actions
 
         # Auxiliary variables
         self._state_view_shape = (-1, self.n_agents, self.n_input)

@@ -152,13 +152,23 @@ def rollout_batch(test=False, experiment_dir=None):
     train_cfg_path = get_train_path(batch_path)
     train_config = configparser.ConfigParser()
     train_config.read(train_cfg_path)
+    # train_args
     agent_type = train_config.get('agent_type', 'agent_type')
     network = train_config.get('train_args', 'network')
+    # env args
+    yellow = train_config.get('env_args', 'yellow')
+    min_green = train_config.get('env_args', 'min_green')
+    max_green = train_config.get('env_args', 'max_green')
+
+    # mdp args
+    feature = train_config.get('mdp_args', 'feature')
+    action_schema = train_config.get('mdp_args', 'action_schema')
+    phases_filter = train_config.get('mdp_args', 'phases_filter')
+    use_lanes = train_config.get('mdp_args', 'use_lanes')
 
     # Override rollouts config files with test.config file parameters.
     test_config = configparser.ConfigParser()
     test_config.read('config/test.config')
-
     num_rollouts = int(test_config.get('test_args', 'num-rollouts'))
     rollout_time = test_config.get('test_args', 'rollout-time')
 
@@ -197,6 +207,17 @@ def rollout_batch(test=False, experiment_dir=None):
             test_config.set(cfg_key, "seed", str(seed))
             test_config.set(cfg_key, "network", network)
             test_config.set(cfg_key, "agent_type", agent_type)
+
+            # env_args
+            test_config.set(cfg_key, "yellow", yellow)
+            test_config.set(cfg_key, "min_green", min_green)
+            test_config.set(cfg_key, "max_green", max_green)
+
+            # mdp_args
+            test_config.set(cfg_key, "feature", feature)
+            test_config.set(cfg_key, "action_schema", action_schema)
+            test_config.set(cfg_key, "phases_filter", phases_filter)
+            test_config.set(cfg_key, "use_lanes", use_lanes)
 
             # Write temporary train config file.
             cfg_path = tmp_path / f'rollouts-{run_path.name}-{chkpt_num}-{seed}.config'

@@ -1,6 +1,7 @@
 """ 
     Functions to parse configs, save and load files.
 """
+from types import SimpleNamespace
 from datetime import datetime
 import json
 from pathlib import Path
@@ -9,6 +10,8 @@ from shutil import copyfile
 import configparser
 
 from cityflow import Engine
+
+from utils import str2bool
 
 def engine_load_config(network_or_path):
     """Loads config, roadnet and flows 
@@ -76,8 +79,8 @@ def expr_path_create(network, seed=""):
 
 def expr_path_test_target(orig_path, network=None):
     if network is None:
-        args = parse_train_config(Path(orig_path) / 'config' / 'train.config', args_list=['network'])
-        network = args['network']
+        args = parse_train_parameters(Path(orig_path) / 'config' / 'train.config', args_list=['network'])
+        network = args.network
 
     target_path = Path(orig_path) / 'eval'
     target_path.mkdir(exist_ok=True)
@@ -111,7 +114,7 @@ def expr_logs_dump(expr_path, filename, data):
         print(logs_path)
     return logs_dir_path
 
-def parse_train_config(train_config_path,
+def parse_train_parameters(train_config_path,
         args_list=['network', 'experiment_time', 'experiment_save_agent_interval',
             'experiment_seed', 'epsilon_init', 'epsilon_final',
             'epsilon_schedule_timesteps'] ):
@@ -127,37 +130,96 @@ def parse_train_config(train_config_path,
 
     ret['network'] = train_args['network']
     ret['experiment_time']= int(train_args['experiment_time'])
-    ret['experiment_save_agent_interval']= int(train_args['experiment_save_agent_interval'])
+    ret['save_agent_interval']= int(train_args['experiment_save_agent_interval'])
 
     if 'experiment_seed' in train_args.keys():
         ret['experiment_seed'] = int(train_args['experiment_seed']) 
+    else:
+        ret['experiment_seed'] = 0
     ret['agent_type'] = train_config["agent_type"]["agent_type"]
     # Epsilon 
     ret['epsilon_init'] = float(train_args['epsilon_init'])
     ret['epsilon_final'] = float(train_args['epsilon_final'])
-    ret['epsilon_schedule_timesteps'] = float(train_args['epsilon_schedule_timesteps'])
+    ret['epsilon_timesteps'] = float(train_args['epsilon_schedule_timesteps'])
 
-    return ret
+    return SimpleNamespace(**ret)
+
+def parse_mdp_parameters(
+        config_path_or_file,
+        args_list=['feature', 'action_schema', 'phases_filter', 'use_lanes']):
+
+    if isinstance(config_path_or_file, str):  # is path
+        config_path = Path(config_path_or_file)
+
+        # Load train config file with parameters.
+        config = configparser.ConfigParser()
+        config.read(config_path)
+        config_mdp_args = config['mdp_args']
+    else: # is file without section
+        config_mdp_args = config_path_or_file
+
+
+    mdp_args = {}
+    mdp_args['feature'] = config_mdp_args['feature']
+    mdp_args['action_schema'] = config_mdp_args['action_schema']
+    mdp_args['phases_filter'] = eval(config_mdp_args['phases_filter'])
+    try:
+        mdp_args['use_lanes'] = str2bool(config_mdp_args['use_lanes'])
+    except Exception:
+        import ipdb; ipdb.set_trace()
+
+
+    return SimpleNamespace(**mdp_args)
+
+def parse_env_parameters(
+        config_path_or_file,
+        args_list=['yellow', 'min_green', 'max_green']):
+
+    if isinstance(config_path_or_file, str): # is path
+        config_path = Path(config_path_or_file)
+
+        # Load train config file with parameters.
+        config = configparser.ConfigParser()
+        config.read(config_path)
+        config_env_args = config['env_args']
+    else: # is file without `env_args` section
+        config_env_args = config_path_or_file
+
+    env_args = {}
+    env_args['yellow'] = int(config_env_args['yellow'])
+    env_args['min_green'] = int(config_env_args['min_green'])
+    env_args['max_green'] = int(config_env_args['max_green'])
+
+    return SimpleNamespace(**env_args)
+    
 
 def parse_test_config(test_config_path):
 
     if isinstance(test_config_path, str):
-        test_config_path = Path(test_config_path)
-    ret = {}
+        config_path = Path(test_config_path)
 
+    test_args = {}
+    env_args = {}
     # Load test config file with parameters.
-    test_config = configparser.ConfigParser()
-    test_config.read(test_config_path)
-    test_args = test_config['test_args']
+    config = configparser.ConfigParser()
+    config.read(test_config_path)
+    config_test_args = config['test_args']
 
-    ret['orig_path'] = test_args['run-path']
-    ret['rollout_time'] = int(test_args['rollout-time'])
-    ret['chkpt_num'] = int(test_args['chkpt-number'])
-    ret['seed'] = int(test_args['seed'])
-    ret['chkpt_dir_path'] = Path(ret['orig_path']) / 'checkpoints' 
-    ret['agent_type'] = test_args['agent_type']
-    ret['network'] = test_args['network']
+    test_args['orig_path'] = config_test_args['run-path']
+    test_args['rollout_time'] = int(config_test_args['rollout-time'])
+    test_args['chkpt_num'] = int(config_test_args['chkpt-number'])
+    test_args['seed'] = int(config_test_args['seed'])
+    test_args['chkpt_dir_path'] = Path(test_args['orig_path']) / 'checkpoints' 
+    test_args['agent_type'] = config_test_args['agent_type']
+    test_args['network'] = config_test_args['network']
 
-    return ret
 
+    # env_args['yellow'] = int(config_test_args['yellow'])
+    # env_args['min_green'] = int(config_test_args['min_green'])
+    # env_args['max_green'] = int(config_test_args['max_green'])
+    env_args = parse_env_parameters(config_test_args)
+    mdp_args = parse_mdp_parameters(config_test_args)
+
+
+    return SimpleNamespace(**test_args), env_args, mdp_args 
 

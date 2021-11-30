@@ -21,12 +21,11 @@ from pytorch_lightning import seed_everything
 import sys; sys.path.append(Path.cwd().as_posix())
 
 
-
-
 from environment import Environment
 from approximators.tile_coding import TileCodingApproximator
 from utils.file_io import engine_create, engine_load_config, \
-    expr_path_test_target, parse_test_config, parse_train_config
+    expr_path_test_target, parse_test_config, parse_train_parameters, \
+    parse_env_parameters
 from agents import load_agent
 from models import get_loop
 
@@ -49,13 +48,13 @@ def get_arguments():
 def main(test_config_path=None):
 
     # READ  config
-    args = parse_test_config(test_config_path)
-    orig_path =  args['orig_path']
-    rollout_time =  args['rollout_time']
-    chkpt_num =  args['chkpt_num']
-    seed =  args['seed']
-    agent_type = args['agent_type']
-    network = args['network']
+    opt, env_args, mdp_args = parse_test_config(test_config_path)
+    orig_path =  opt.orig_path
+    rollout_time =  opt.rollout_time
+    chkpt_num =  opt.chkpt_num
+    seed =  opt.seed
+    agent_type = opt.agent_type
+    network = opt.network
     chkpt_dir_path = Path(orig_path) / 'checkpoints' 
 
     # DETERMINE target
@@ -73,11 +72,10 @@ def main(test_config_path=None):
     eng = engine_create(config_dir_path / 'config.json', seed=seed, thread_num=4)
 
     seed_everything(seed)
-    env = Environment(network, roadnet, eng, episode_timesteps=rollout_time)
 
-    #TODO: Make a special config section for the env.
-    env = Environment(network, roadnet, eng,
-        episode_timesteps=rollout_time, yellow=0, min_green=10)
+    env = Environment(
+        network, roadnet, env_args, mdp_args, eng, episode_timesteps=rollout_time,
+    )
     approx = TileCodingApproximator(roadnet, flows)
 
     # TODO: nets are approximators -- make load_agent produce the two. 

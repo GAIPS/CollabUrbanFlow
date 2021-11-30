@@ -13,16 +13,19 @@ def load_agent(env, agent_type, chkpt_dir_path, chkpt_num, rollout_time, network
     if agent_type == 'GAT': return gat.load_checkpoint(env, chkpt_dir_path, rollout_time, network)
     raise ValueError(f'{agent_type} not defined.')
 
-def get_agent(agent_type, env, epsilon_init, epsilon_final, epsilon_timesteps):
+# def get_agent(agent_type, env, epsilon_init, epsilon_final, epsilon_timesteps):
+def get_agent(env, train_args):
 
+    agent_type = train_args.agent_type
     if agent_type == 'ACAT':
-        return ACAT(env.phases, epsilon_init,
-                    epsilon_final, epsilon_timesteps)
+        return ACAT(env.phases, train_args.epsilon_init,
+                    train_args.epsilon_final, train_args.epsilon_timesteps)
     if agent_type == 'MARLIN':
-        return MARLIN(env.phases, epsilon_init,
-                      epsilon_final, epsilon_timesteps, network)
+        return MARLIN(env.phases, train_args.epsilon_init,
+                      train_args.epsilon_final, train_args.epsilon_timesteps, env.network)
+
     if agent_type in ('DQN', 'DQN2', 'DQN3', 'GAT'):
-        # TODO: Place here the episode_timesteps
+        # TODO: Hparameters becomes model_args
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         hparams = { 
             'batch_size': 1000,
@@ -31,13 +34,10 @@ def get_agent(agent_type, env, epsilon_init, epsilon_final, epsilon_timesteps):
             'sync_rate': 500,
             'replay_size':50000,
             'warm_start_steps': 1000,
-            'epsilon_init':epsilon_init,
-            'epsilon_final':epsilon_final,
-            'epsilon_timesteps':epsilon_timesteps
         }
         if agent_type == 'DQN':
             model = dqn.DQNLightning
         elif agent_type == 'GAT':
             model = gat.GATLightning
-        return model(env, device, **hparams).to(device)
+        return model(env, device, train_args, **hparams).to(device)
     raise ValueError(f'{agent_type} not defined.')

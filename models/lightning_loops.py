@@ -6,8 +6,9 @@ from pytorch_lightning import Trainer, seed_everything
 from tqdm.auto import trange
 from utils.file_io import expr_logs_dump
 
-def train_loop(env, model, experiment_time, save_agent_interval, chkpt_dir, seed):
-
+def train_loop(env, model, train_args, chkpt_dir, seed):
+    experiment_time = train_args.experiment_time
+    save_agent_interval = train_args.save_agent_interval 
     model.save_path = chkpt_dir
     seed_everything(seed)
     # FIXME: RLDataLoader apperantly has an irregular

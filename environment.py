@@ -5,7 +5,7 @@
     * Converts agent's actions into control actions.
     * Observes traffic data and transforms into features.
     * Logs past observations
-    * Produces features: Delay and pressure.
+    * Produces features: Delay, pressure and WAVE.
     
     Limitations:
     ------------
@@ -21,13 +21,23 @@ from tqdm import tqdm
 from tqdm.auto import trange
 from functools import cached_property
 
-from features import compute_delay, compute_pressure
-from utils.network import get_phases
+from features import compute_delay, compute_pressure, compute_wave
+from utils.network import get_phases, get_lanes
+from utils.utils import flatten2
 from utils.file_io import engine_create, engine_load_config
 
-FEATURE_CHOICE = ('delay', 'pressure')
+FEATURE_CHOICE = ('delay', 'wave', 'pressure')
+# Colight phase feature
+FEATURE_PHASE = {
+        1: [0, 1, 0, 1, 0, 0, 0, 0],
+        2: [0, 0, 0, 0, 0, 1, 0, 1],
+        3: [1, 0, 1, 0, 0, 0, 0, 0],
+        4: [0, 0, 0, 0, 1, 0, 1, 0]
+}
 
 def simple_hash(x): return hash(x) % (11 * 255)
+def lval(x): return len(next(iter(x.values()))) 
+def toph(x, y): return tuple(FEATURE_PHASE[x] + [y])
 
 def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
     eng = engine_create(network, seed=seed, thread_num=thread_num)
@@ -39,12 +49,10 @@ class Environment(object):
     def __init__(self,
                  network, 
                  roadnet,
+                 env_args,
+                 mdp_args, 
                  engine=None,
-                 yellow=5,
-                 min_green=5,
-                 max_green=90,
                  step_size=5,
-                 feature='delay',
                  episode_timesteps=-1,
                  emit=False,
                  **kwargs):
@@ -63,14 +71,35 @@ class Environment(object):
         '''
         # Network id
         self.network = network
+
         # Signal plans regulation
-        self.yellow = yellow
-        self.min_green = min_green
-        self.max_green = max_green
+        self.yellow = env_args.yellow
+        self.min_green = env_args.min_green
+        self.max_green = env_args.max_green
         self.step_size = step_size
 
+        # mdp args
+        # TODO: Implement `set` phase
+        # TODO: Implement `use_lanes` False
+        if mdp_args.feature not in FEATURE_CHOICE:
+            raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
+        if not mdp_args.action_schema in ('next', 'set'): raise NotImplementedError
+        self.mdp_args = mdp_args
+        self.feature = mdp_args.feature
+        self.action_schema = mdp_args.action_schema
+        self.phases_filter = mdp_args.phases_filter
+        self.use_lanes = mdp_args.use_lanes
+
+
         # Roadnet
-        self._inc, self._out, self._lim = get_phases(roadnet, filter_phases=[0, 1, 2, 3])
+        inc, out, lim = get_phases(roadnet, phases_filter=self.phases_filter)
+        self.phases_incoming = inc
+        self.phases_outgoing = out
+        self.max_speeds = lim
+
+        inc, out  = get_lanes(roadnet)
+        self.lanes_incoming = inc
+        self.lanes_outgoing = out
 
         # Loop control
         self._episode_timestep = episode_timesteps
@@ -79,11 +108,6 @@ class Environment(object):
         self.emit = emit
         self._emissions = []
         self.info_dict = defaultdict(list)
-
-        if feature not in FEATURE_CHOICE:
-            raise ValueError(f'feature {feature} must be in {FEATURE_CHOICE}')
-        self.feature = feature
-
 
         if engine is not None: self.engine = engine
 
@@ -121,19 +145,32 @@ class Environment(object):
         return sorted(self.phases.keys())
 
     @cached_property
-    def phases(self): return self._inc
+    def phases(self): return self.phases_incoming
+
+    @cached_property 
+    def lanes(self): return self.lanes_incoming
 
     @cached_property
-    def num_phases(self):
-        # It should be fixed
+    def n_phases(self):
+        # They all should have the same number of phases.
         assert len(set([len(phase) for phase in self.phases.values()])) == 1
-        return len(next(iter(self.phases.values())))
+        return lval(self.phases)
 
     @cached_property
-    def incoming_roadlinks(self): return self._inc
+    def n_features(self): # <--> edges or phases
+        if not self.use_lanes: return self.n_phases + 2
+        # n_features are the number of roads per intersec.
+        assert len(set([len(lanes) for lanes in self.lanes.values()])) == 1
+        return lval(self.lanes) + lval(FEATURE_PHASE) + 1
 
     @cached_property
-    def outgoing_roadlinks(self): return self._out
+    def n_actions(self): # <--> edges or phases
+        if self.action_schema == 'set': return self.n_phases 
+        if self.action_schema == 'next': return 2
+        raise NotImplementedError
+
+        
+
 
     @cached_property
     def max_speeds(self): return self._lim
@@ -171,14 +208,17 @@ class Environment(object):
     @lru_cache(maxsize=1)
     def _observations(self, timestep):
         active_phases = self._update_active_phases()
+        if self.use_lanes: # expand phases
+            active_phases = {tl: toph(*phd) for tl, phd in active_phases.items()}
         features = self._update_features()
-        return {_id: active_phases[_id] + features[_id] for _id in self.tl_ids}
+        return {tl: active_phases[tl] + features[tl] for tl in self.tl_ids}
 
     @property
     def reward(self):
-        return {_id: -float(sum(_obs[2:])) for _id, _obs in self.observations.items()}
+        n_sum = 9 if self.use_lanes else 2
+        return {tl: -float(sum(obs[n_sum:])) for tl, obs in self.observations.items()}
 
-    # TODO: include switch
+    # TODO: include next
     def _update_active_phases(self):
         for tl_id, internal in self._active_phases.items():
             active_phase, active_time = internal
@@ -189,10 +229,17 @@ class Environment(object):
 
     def _update_features(self):
         if self.feature == 'delay':
+            if self.use_lanes: raise NotImplementedError
             return compute_delay(self.phases, self.vehicles,
                                  self.speeds, self.max_speeds)
-        return compute_pressure(self.incoming_roadlinks,
-                                self.outgoing_roadlinks, self.vehicles)
+        if self.feature == 'wave':
+            if self.use_lanes:
+                return compute_wave(self.lanes, self.vehicles, self.use_lanes)
+            else:
+                return compute_wave(self.phases, self.vehicles, self.use_lanes)
+
+        return compute_pressure(self.phases_incoming,
+                                self.phases_outgoing, self.vehicles)
 
 
     def _update_emissions(self):
@@ -241,6 +288,14 @@ class Environment(object):
 
     """Performs phase control"""
     def _phase_ctl(self, actions):
+
+        def fn(current_phase, current_time, current_action):
+            if current_time >= self.max_green: return True
+            if current_time >= self.yellow + self.min_green:
+                if self.action_schema == 'next': return current_action == 1
+                if self.action_schema == 'set': return (current_action != (current_phase - 1))
+            return False
+
         for tl_id, active_phases in self._active_phases.items():
             phases = self.phases[tl_id]
             current_phase, current_time = active_phases
@@ -250,20 +305,29 @@ class Environment(object):
                 # transitions to green: y -> G
                 phase_ctrl = 2 * (current_phase - 1)
 
-            elif (current_time >= self.yellow + self.min_green and current_action == 1) or \
-                    (current_time == self.max_green):
-                # transitions to yellow: G -> y
-                # if yellow is zero; go to next green.
-                phase_ctrl = 2 * (current_phase - 1) + int(self.yellow > 0)
+            elif fn(current_phase, current_time, current_action):
 
                 # adjust log
-                next_phase = (current_phase % len(phases))
-                self._active_phases[tl_id] = (next_phase + 1, 0)
+                if self.action_schema == 'next':
+                    # transitions to yellow: G -> y
+                    # if yellow is zero; go to next green.
+                    phase_ctrl = 2 * (current_phase - 1) + int(self.yellow > 0)
+
+                    next_phase = (current_phase % len(phases))
+                    self._active_phases[tl_id] = (next_phase + 1, 0)
+
+                elif self.action_schema == 'set':
+                    # transitions to yellow: G -> y
+                    # if yellow is zero; go to next green.
+                    phase_ctrl = 2 * current_action + int(self.yellow > 0)
+
+                    self._active_phases[tl_id] = (current_action + 1, 0)
 
             if phase_ctrl is not None:
                 # phase_ctrl 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 0 
                 # phase      1 -> 2 -> 2 -> 3 -> 3 -> 4 -> 4 -> 1 -> 1
                 self.engine.set_tl_phase(tl_id, phase_ctrl)
+
 
     def log(self, actions):
 

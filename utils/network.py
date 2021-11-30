@@ -1,15 +1,16 @@
 """ Helpful cityflow's roadnet processing functions
 
+    TODO: Change adjacency computation from phase inputs to lanes inputs
     References:
     ----------
     * https://cityflow.readthedocs.io/en/latest/roadnet.html
 """
 import numpy as np
 from scipy.sparse import csr_matrix
-from utils.utils import flatten
+from utils.utils import flatten, flatten2
 from utils import points2length
 
-def get_phases(roadnet, filter_phases=[]):
+def get_phases(roadnet, phases_filter=[]):
     """ Forms a traffic light phase
 
     Parameters:
@@ -54,7 +55,7 @@ def get_phases(roadnet, filter_phases=[]):
             ln for rd in roads if rd['id'] == x for ln in rd['lanes']
         ][y]['maxSpeed']
     # filter phases
-    def tn(x): return ((not any(filter_phases)) or (x in filter_phases))
+    def tn(x): return ((not any(phases_filter)) or (x in phases_filter))
     for intersection in intersections:
         lightphases = intersection['trafficLight']['lightphases']
         roadlinks_incoming = {}
@@ -86,6 +87,45 @@ def get_phases(roadnet, filter_phases=[]):
         speed_limit[intersection['id']] = max_speeds
 
     return incoming, outgoing, speed_limit
+
+
+def get_lanes(roadnet):
+    """Returns lanes incoming / lanes outgoing
+
+    Parameters:
+    -----------
+    * roadnet: dict representing a roadnet in cityflow format.
+
+    Returns:
+    --------
+    * lanes_incoming: dict<str, list<str>
+        Phases controlling the incoming approaches.
+        key: intersection_code <str> --> lane_ids <str>
+
+    * lanes_outgoing: dict<str,list<str>>
+        Phases controlling the outgoing approaches.
+        key: intersection_code <str> --> lane_ids <str>
+
+    Usage:
+    ------
+    >>> import json
+    >>> with open(roadnet_path, 'r') as f: roadnet = json.load(f)
+    >>> lanes_incoming, lanes_outgoing = get_lanes(roadnet)
+    """
+    # Defines loop constants.
+    incoming = {}
+    outgoing = {}
+    roads = roadnet['roads']
+    tl_ids = [intr['id'] for intr in roadnet['intersections'] if not intr['virtual']]
+    # builds lane list from x road's information
+    def bn(x): return [f"{x['id']}_{nl}" for nl in range(len(x['lanes']))]
+    # iterates over roads that finish on intersection y.
+    def fn(y): return [bn(road) for road in roads if road['endIntersection'] == y]
+    # iterates over roads that start on intersection y.
+    def sn(y): return [bn(road) for road in roads if road['startIntersection'] == y]
+    incoming = {tl: sorted(flatten2(fn(tl))) for tl in tl_ids}
+    outgoing = {tl: sorted(flatten2(sn(tl))) for tl in tl_ids}
+    return incoming, outgoing
 
 
 def get_neighbors(incoming, outgoing):
@@ -124,16 +164,15 @@ def get_neighbors(incoming, outgoing):
 
     # Get incidence matrix
     edge_list = []
-
     prev_lu = ""
     for u, v in all_edges:
         lu, lv = id_to_label[u], id_to_label[v]
         if prev_lu != lu:
-            uinc_set = set(flatten(incoming[lu].values()))
-            uout_set = set(flatten(outgoing[lu].values()))
+            uinc_set = set(incoming[lu])
+            uout_set = set(outgoing[lu])
 
-        vinc_set = set(flatten(incoming[lv].values()))
-        vout_set = set(flatten(outgoing[lv].values()))
+        vinc_set = set(incoming[lv])
+        vout_set = set(outgoing[lv])
 
         # u = v
         if u == v: edge_list.append((u, v))
@@ -145,12 +184,13 @@ def get_neighbors(incoming, outgoing):
     
     return edge_list, id_to_label
 
+# TODO: Change from phases to lanes.
 def get_adjacency_from_roadnet(roadnet):
-    *args, _ = get_phases(roadnet)
+    *args, _ = get_lanes(roadnet)
     return get_adjacency_from_roadlinks(*args)
 
 def get_adjacency_from_env(env):
-    args = (env.incoming_roadlinks, env.outgoing_roadlinks)
+    args = (env.lanes_incoming, env.lanes_outgoing)
     return get_adjacency_from_roadlinks(*args)
 
 def get_adjacency_from_roadlinks(incoming, outgoing):

@@ -17,9 +17,11 @@ from features import compute_delay, compute_pressure
 from utils.network import get_phases
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump
 
-def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, seed):
+def train_loop(env, agent, approx, train_args, chkpt_dir, seed):
     # 1) Seed everything
     np.random.seed(seed)    
+    experiment_time = train_args.experiment_time
+    episode_time = train_args.experiment_save_agent_interval
     num_episodes = int(experiment_time / episode_time)
 
     s_prev = None

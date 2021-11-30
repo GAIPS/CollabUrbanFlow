@@ -85,7 +85,7 @@ class TileCodingApproximator(object):
         if num_tilings == 1:
             offsets = [[0] * len(feature_bounds)]
 
-        # TODO: verify num_phases * num_tilings
+        # TODO: verify n_phases * num_tilings
         bins =[[num_tiles for _ in range(len(feature_bounds))]]
         feature_ranges =[[0, fb] for fb in feature_bounds]
         return create_tilings(feature_ranges, num_tilings, bins, offsets)

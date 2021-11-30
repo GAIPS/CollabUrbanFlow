@@ -67,3 +67,6 @@ def flatten(items, ignore_types=(str, bytes)):
             yield from flatten(x)
         else:
             yield x
+
+def flatten2(items, ignore_types=(str, bytes)):
+    return [item for item in flatten(items)]
