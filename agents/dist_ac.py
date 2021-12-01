@@ -6,6 +6,7 @@
 
     Zhang, et al. 2018
 '''
+from functools import lru_cache
 from copy import deepcopy
 from operator import itemgetter
 from collections import defaultdict
@@ -16,8 +17,8 @@ import numpy as np
 np.seterr(all='raise')
 
 # Uncoment to run stand alone script.
-import sys
-sys.path.append(Path.cwd().as_posix())
+# import sys
+# sys.path.append(Path.cwd().as_posix())
 
 from utils import flatten as ufl
 
@@ -31,6 +32,8 @@ def gather(x, y): return x[np.arange(x.shape[0]), y]
 def tile(x, n, k): return np.tile(x, (n, k, 1)).T
 def clip(x): return np.minimum(np.maximum(x, -1e-8), 50)
 def norm(x): nx = np.linalg.norm(x); return x / nx if nx > 0 else x
+def deltime(x): return np.delete(x, [1, 5, 9])
+def process(x): return norm(deltime(vectorize(x)))
 
 # x is 1dim array should be [i, j, k]
 def tiler(x, i=None, j=None, k=None):
@@ -69,7 +72,7 @@ class DistributedActorCritic(object):
         self.tl_ids = [k for k in phases.keys()]
         self.phases = phases
         self.n_agents = len(self.tl_ids)
-        self.n_inputs = self.n_agents * 4
+        self.n_inputs = self.n_agents * 3
         self.n_actions = 2
         self.C = adjacency_to_consensus(adjacency_matrix)
 
@@ -84,8 +87,8 @@ class DistributedActorCritic(object):
         self._eps_explore = True
 
         # Hyperparameters
-        self.alpha = alpha # critic stepsize
-        self.beta = beta # actor stepsize
+        self.a0 = alpha # critic stepsize
+        self.b0 = beta  # actor stepsize
         self.gamma = gamma # discount factor
 
         # Dac parameters
@@ -100,6 +103,18 @@ class DistributedActorCritic(object):
         if not self._eps_explore: return 0.0
         return max(self._eps_final, self._eps_init + self._eps_dec * self.n_steps)
 
+    @property
+    def alpha(self): return self._alpha(self.n_steps) 
+
+    @lru_cache(maxsize=1)
+    def _alpha(self, n_steps): return self.a0 / (n_steps + 1)
+
+    @property
+    def beta(self): return self._beta(self.n_steps)
+
+    @lru_cache(maxsize=1)
+    def _beta(self, n_steps): return self.b0 / (n_steps + 2)
+
     def stop(self):
         self._eps_explore = False
 
@@ -107,20 +122,20 @@ class DistributedActorCritic(object):
         self.n_steps = 0
 
     def act(self, state):
-        if isinstance(state, dict): state = vectorize(state) 
+        if isinstance(state, dict): state = norm(deltime(vectorize(state)))
         return dict(zip(self.tl_ids,self.policy(state, choice=True)))
 
     # TODO: move flatten operation to a decorator.
     def update(self, state, actions, reward, next_state):
         # 1. Preprocessing
         # transform from dict to vector.
-        state = vectorize(state)       # [n_inputs]
-        actions = vectorize(actions)   # [n_agent]
-        reward = vectorize(reward)     # [n_agent]
-        next_state = vectorize(next_state)
+        x = process(state)  # [n_inputs]
+        actions = vectorize(actions)    # [n_agent]
+        reward = vectorize(reward)  # [n_agent]
+        y = process(next_state)
 
         # normalize L2
-        x = norm(state); y = norm(next_state)
+        # x = norm(deltime(state)); y = norm(deltime(next_state))
 
         # auxiliary indices
         ii = np.arange(self.n_agents)
@@ -134,19 +149,27 @@ class DistributedActorCritic(object):
         delta_q = self.q(y, next_actions) - self.q(x, actions)
         delta = unsqueeze(reward - self.mu + delta_q)
 
-        # Critic step
+        # if actions[0] == 0:
+        #     print(f' {self.n_steps} W {self.w[0, 0, :]}')
+        #     print(f' {self.n_steps} Theta {self.theta[0, 0, :]}')
+        # # Critic step
         # [n_agents, n_inputs]
         grad_q = self.grad_q(x)
         weights = self.w[ii, jj, :] + self.alpha * (delta * grad_q)
 
         # Actor step
-        adv = unsqueeze(self.advantage(x, actions))    # [n_agents, 1]
-        ksi = self.grad_policy(x, actions)             # [n_agents, n_inputs]
-        self.theta[ii, jj, :] += (self.beta * adv * ksi)   # [n_agents, n_inputs]
+        adv = unsqueeze(self.advantage(x, actions)) # [n_agents, 1]
+        ksi = self.grad_policy(x, actions)   # [n_agents, n_inputs]
+        self.theta[ii, jj, :] += (self.beta * adv * ksi) # [n_agents, n_inputs]
 
         # Consensus step: broadcast weights
         self.w[ii, jj, :] = self.C @ weights
         self.mu = (1 - self.alpha) * self.mu + self.alpha * reward
+        # if actions[0] == 0:
+        #     print(f' {self.n_steps} W {self.w[0, 0, :]}')
+        #     print(f' {self.n_steps} Theta {self.theta[0, 0, :]}')
+        #     import ipdb; ipdb.set_trace()
+
         self.n_steps += 1
 
     def q(self, state, actions=None):
@@ -154,10 +177,7 @@ class DistributedActorCritic(object):
         qval = self.w @ state  # [n_agents, n_actions]
         if actions is None: return qval
         # [n_agents]
-        try:
-            gat = gather(qval, actions)
-        except Exception:
-            import ipdb; ipdb.set_trace()
+        gat = gather(qval, actions)
         return gat 
 
     def grad_q(self, state):
@@ -193,7 +213,7 @@ class DistributedActorCritic(object):
         '''
         # gibbs distribution / Boltzman policies.
         # vectorize state
-        if isinstance(state, dict): state = vectorize(state) 
+        if isinstance(state, dict): state = process(state)
 
         # [n_agent, n_actions, n_inputs]
         phi_s = tiler(state, i=self.n_agents, j=self.n_actions)
@@ -233,6 +253,33 @@ class DistributedActorCritic(object):
 
         # [n_agents]
         return self.q(state, actions) - np.sum(probs * self.q(state), axis=-1)
+
+    
+    '''        debugging        '''
+    def get_actor(self): return self._get_params(self.w)
+
+    def get_critic(self): return self._get_params(self.theta)
+
+    def get_probs(self, state):
+        return self._get_params(self.policy(process(state)))
+
+    def get_values(self, state):
+        # [n_agents, n_actions]
+        x = process(state)
+
+        probs = self.policy(x)
+
+        return self._get_params(np.sum(probs * self.q(x), axis=1))
+
+    def _get_params(self, params):
+        tls = self.tl_ids
+        _params = np.split(params, self.n_agents, axis=0)
+        gen = zip(tls, _params)
+
+        def fn(x):
+            if len(x.shape) == 3 and x.shape[0] == 1: x = x.squeeze(0)
+            return x.tolist()
+        return {tl: fn(param) for tl, param in gen}
 
     """ Serialization """
     # Serializes the object's copy -- sets get_wave to null.
@@ -307,10 +354,17 @@ if __name__ == '__main__':
     distributed_actions = dac.policy(states, choice=False)
     next_actions = dac.policy(states, choice=True)
 
-    advantage = dac.advantage(vectorize(states), vectorize(actions))
+    advantage = dac.advantage(process(states), vectorize(actions))
 
-    ksi = dac.grad_policy(vectorize(states), vectorize(actions))
+    ksi = dac.grad_policy(process(states), vectorize(actions))
+
+    probs = dac.get_probs(states)
+
+    values = dac.get_values(states)
+
+    actor = dac.get_actor()
+
+    
     N = 100000
-
     for i in range(N):
         dac.update(states, actions, rewards, next_states)

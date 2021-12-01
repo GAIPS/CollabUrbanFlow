@@ -13,15 +13,18 @@ import numpy as np
 from tqdm import tqdm
 from tqdm.auto import trange
 
-from features import compute_delay, compute_pressure
 from utils.network import get_phases
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump
+from agents.dist_ac import DistributedActorCritic
 
 def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, seed):
     # 1) Seed everything
     np.random.seed(seed)    
     num_episodes = int(experiment_time / episode_time)
-
+    tls = env.tl_ids
+    n_agents = len(env.tl_ids)
+    extra_info = defaultdict(list)
+    
 
 
     # 2) Initialize loop
@@ -48,11 +51,17 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, see
                         a_prev = actions
 
                     else:
+                        if isinstance(agent, DistributedActorCritic):
+                            extra_info['actor'].append(agent.get_actor())
+                            extra_info['critic'].append(agent.get_critic())
+                            extra_info['policy'].append(agent.get_probs(state))
+                            extra_info['values'].append(agent.get_values(state))
                         agent.update(s_prev, a_prev, reward, state)
                         
                     s_prev = state
                     a_prev = actions
                     gen.send(actions)
+
 
         except StopIteration as e:
             result = e.value
@@ -64,7 +73,9 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, see
             s_prev = None
             a_prev = None
             agent.reset()
-    return env.info_dict
+    info_dict = env.info_dict
+    info_dict.update(extra_info)
+    return info_dict
 
 # TODO: Move emissions to environment
 def rollback_loop(env, agent, approx, rollout_time, target_path, seed):
