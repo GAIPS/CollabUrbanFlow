@@ -32,6 +32,13 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, see
         if approx is None: return observations
         return approx.approximate(observations)
 
+
+
+    # 2) Initialize loop
+    def get_state(observations):
+        if approx is None: return observations
+        return approx.approximate(observations)
+
     s_prev = None
     a_prev = None
 
