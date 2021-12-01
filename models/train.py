@@ -62,7 +62,11 @@ def main(train_config_path=TRAIN_CONFIG_PATH):
 
 
     expr_config_dump(network, expr_path, config, flows, roadnet)
-    approx = TileCodingApproximator(roadnet, flows)
+    if agent_type == 'ACAT': 
+        approx = TileCodingApproximator(roadnet, flows)
+    else:
+        approx = None
+
     agent = get_agent(agent_type, env, epsilon_init,
                       epsilon_final, epsilon_timesteps)
 
