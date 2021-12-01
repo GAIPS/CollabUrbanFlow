@@ -22,6 +22,13 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, see
     np.random.seed(seed)    
     num_episodes = int(experiment_time / episode_time)
 
+
+
+    # 2) Initialize loop
+    def get_state(observations):
+        if approx is None: return observations
+        return approx.approximate(observations)
+
     s_prev = None
     a_prev = None
 
@@ -33,7 +40,7 @@ def train_loop(env, agent, approx, experiment_time, episode_time, chkpt_dir, see
                 experience = next(gen)
                 if experience is not None:
                     observations, reward = experience[:2]
-                    state = approx.approximate(observations)
+                    state = get_state(observations)
                     actions = agent.act(state)
 
                     if s_prev is None and a_prev is None:
@@ -66,12 +73,17 @@ def rollback_loop(env, agent, approx, rollout_time, target_path, seed):
     gen = env.loop(rollout_time)
     np.random.seed(seed)
 
+    # 2) Initialize loop
+    def get_state(observations):
+        if approx is None: return observations
+        return approx.approximate(observations)
+
     try:
         while True:
             experience = next(gen)
             if experience is not None:
                 observations = experience[0]
-                state = approx.approximate(observations)
+                state = get_state(observations)
                 actions = agent.act(state)
 
                 gen.send(actions)
