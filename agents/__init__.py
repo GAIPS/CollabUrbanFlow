@@ -24,15 +24,15 @@ def get_agent(env, train_args):
         return MARLIN(env.phases, train_args.epsilon_init,
                       train_args.epsilon_final, train_args.epsilon_timesteps, env.network)
 
-    if agent_type in ('DQN', 'DQN2', 'DQN3', 'GAT'):
+    if agent_type in ('DQN', 'GAT'):
         # TODO: Hparameters becomes model_args
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         hparams = { 
             'batch_size': 1000,
-            'lr': 5e-3, 
-            'gamma': 0.98,
-            'sync_rate': 500,
-            'replay_size':50000,
+            'lr': 1e-3, 
+            'gamma': 0.8,
+            'sync_rate': 18000,
+            'replay_size':10000,
             'warm_start_steps': 1000,
         }
         if agent_type == 'DQN':

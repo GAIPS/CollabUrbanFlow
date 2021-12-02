@@ -27,7 +27,7 @@
 """
 
 import argparse
-from functools import cached_property
+from functools import cached_property, lru_cache
 from collections import deque, namedtuple, OrderedDict
 from pathlib import Path
 
@@ -57,7 +57,7 @@ class Agent:
 
     def __init__(self, env, replay_buffer=None):
         """
-        Parameters:
+        Parameterst:
         -----------
         * env: environment.Environment
             Trainning environment
@@ -179,10 +179,11 @@ class GATLightning(pl.LightningModule):
         self.epsilon_init = train_args.epsilon_init
         self.epsilon_final = train_args.epsilon_final
         self.epsilon_timesteps = train_args.epsilon_timesteps
+        self.epsilon_decay = 'exponential' # or linear.
 
         self.env = env
         self.save_path = save_path
-        self.num_episodes = 0
+        self.n_episodes = 0
 
         # TODO: mdp_args
         self.n_agents = len(self.env.tl_ids)
@@ -214,10 +215,28 @@ class GATLightning(pl.LightningModule):
 
     @property
     def epsilon(self):
-        epsilon = max(self.epsilon_final,
-                      self.epsilon_init - \
-                      (self.timestep + 1) / self.epsilon_timesteps)
+        if self.epsilon_decay == 'linear':
+            epsilon = max(self.epsilon_final,
+                          self.epsilon_init - \
+                          (self.timestep + 1) / self.epsilon_timesteps)
+        else:
+            epsilon = max(0.95**self.n_episodes, self.epsilon_final)
         return epsilon
+
+    # TODO: Improve iteration rates.
+    # @lru_cache(maxsize=1)
+    # def _update_eps_linear(self, step):
+    #     epsilon = max(self.epsilon_final,
+    #                   self.epsilon_init - \
+    #                   (step + 1) / self.epsilon_timesteps)
+    #     print(epsilon, step)
+    #     return epsilon
+
+    # @lru_cache(maxsize=1)
+    # def _update_eps_exp(self, n_episode):
+    #     epsilon = max(0.95**n_episode, self.epsilon_init)
+    #     print(epsilon, self.timestep, n_episode)
+    #     return epsilon
 
     @cached_property
     def adjacency_matrix(self):
@@ -225,9 +244,14 @@ class GATLightning(pl.LightningModule):
         return torch.tensor(self.agent.adjacency_matrix).to(device)
 
     def reset(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
-        if self.num_episodes > 0:
+        if self.n_episodes > 0:
             state_dict = torch.load(self.save_path / str(self.timestep) / f'GAT.chkpt')
             self.net.load_state_dict(state_dict, strict=False)
+            
+
+            target_chkpt_num = max(self.timestep - self.sync_rate, 3600)
+
+            state_dict = torch.load(self.save_path / str(target_chkpt_num) / f'GAT.chkpt')
             self.target_net.load_state_dict(state_dict, strict=False)
             self.agent.reset()
         else:
@@ -275,7 +299,7 @@ class GATLightning(pl.LightningModule):
         output = self.net(x)
         return output
 
-    def dqn_mse_loss(self, batch):
+    def loss_step(self, batch):
         """Calculates the mse loss using a mini batch from the replay buffer.
 
         Args:
@@ -315,17 +339,19 @@ class GATLightning(pl.LightningModule):
 
         # calculates training loss
         opt = self.optimizers(use_pl_optimizer=True)
-        loss = self.dqn_mse_loss(batch)
+        loss = self.loss_step(batch)
         opt.zero_grad()
         loss.backward()
         opt.step()
 
         # Soft update of target network
-        if self.episode_timestep % self.sync_rate == 0:
-            self.target_net.load_state_dict(self.net.state_dict(), strict=False)
+        # if self.timestep % self.sync_rate == 0:
+        #     print(self.epsilon, self.timestep, self.n_episodes)
+        #     import ipdb; ipdb.set_trace()
+        #     self.target_net.load_state_dict(self.net.state_dict(), strict=False)
 
         if done:
-            self.num_episodes += 1
+            self.n_episodes += 1
             # save and reset the network
             # update log.
             self._timestep += self.episode_timesteps
