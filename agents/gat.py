@@ -53,6 +53,8 @@ class Agent:
     >>> buffer = ReplayBuffer(10)
     >>> Agent(env, buffer)  # doctest: +ELLIPSIS
     <...gat.Agent object at ...>
+
+    TODO: Should receive arguments.
     """
 
     def __init__(self, env, replay_buffer=None):
@@ -67,7 +69,6 @@ class Agent:
 
         self.env = env
         self.replay_buffer = replay_buffer
-
         self.reset()
 
     @cached_property
@@ -94,13 +95,13 @@ class Agent:
         * actions: dict<str, int>
         contains actions from all agents.
         """
-        # actions = {}
         n_agents = len(self.env.tl_ids)
+        n_actions = self.env.n_actions
 
         state = torch.tensor([self.state]).reshape((n_agents, -1)).to(device)
 
         actions = net(state).argmax(dim=-1).clone().detach().cpu().numpy()
-        choice = np.random.choice((0, 1), replace=True, size=n_agents)
+        choice = np.random.choice(n_actions, replace=True, size=n_agents)
         flip = np.random.rand(n_agents) < epsilon
         actions = np.where(flip, choice, actions)
         return dict(zip(self.env.tl_ids, actions))
