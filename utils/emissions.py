@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+EXCLUDE_EMISSION = ['CO', 'CO2', 'HC', 'NOx', 'PMx', 'angle', 'eclass', 'electricity', 'fuel', 'noise']
+
 def str2bool(v, exception=None):
     if isinstance(v, bool):
         return v
@@ -13,6 +15,39 @@ def str2bool(v, exception=None):
             raise ValueError('boolean value expected')
         else:
             raise exception
+
+def get_emissions(file_path, exclude_emissions=EXCLUDE_EMISSION):
+    """Gets an emission file
+
+    Parameters:
+    ----------
+    * file_path
+    * exclude_emissions
+
+    Return:
+    ------
+    * df pandas.DataFrame
+
+    """
+    df = pd.read_csv(file_path, sep=';', header=0, encoding='utf-8')
+
+    # The token 'vehicle_' comes when using SUMOS's script
+    # referece sumo/tools/xml2csv
+    df.columns = [str.replace(str(name), 'vehicle_', '') for name in df.columns]
+    df.columns = [str.replace(str(name), 'timestep_', '') for name in df.columns]
+    df.set_index(['time'], inplace=True)
+
+    # Drop rows where there's no vehicle
+    df = df.dropna(axis=0, how='all')
+
+    # Drop columns if needed
+    if exclude_emissions is not None:
+        df = df.drop(exclude_emissions, axis=1, errors='ignore')
+
+    if 'waiting' in df.columns:
+        df = df.drop(['waiting'], axis=1)
+
+    return df
 
 def get_vehicles(emissions_df):
     """Returns vehicle data
