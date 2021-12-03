@@ -11,7 +11,7 @@ from utils.utils import flatten
 def _delay(x): return exp(-5 * x)
 def _volume(vehs, edges): return sum([vehs[edge] for edge in edges])
 
-def compute_delay(phases, vehicles, velocities, speed_limits):
+def compute_delay(phases, vehicles, velocities, speed_limits, use_lanes=False):
     """ computes delay feature
         * a negative exponential of the deviation from a vehicles' speed 
         to the last.
@@ -39,13 +39,22 @@ def compute_delay(phases, vehicles, velocities, speed_limits):
     for tl_id, tl_phases  in phases.items():
         delays = []
             
-        for phs, edges in tl_phases.items():
-            phase_delays = []
-            for edge in edges:
-                max_speed = speed_limits[tl_id][edge] 
-                edge_velocities = [velocities[idv] for idv in vehicles[edge]]
-                phase_delays += [_delay(vel / max_speed) for vel in edge_velocities]
-            delays.append(round(float(sum(phase_delays)), 4))
+        if use_lanes:
+            max_speeds = speed_limits[tl_id]
+            for edge in tl_phases:
+                if len(vehicles[edge]) == 0:
+                    delays.append(0.0)
+                else:
+                    lane_delays = [_delay(velocities[idv] / max_speeds[edge]) for idv in vehicles[edge]]
+                    delays.append(round(float(sum(lane_delays)), 4))
+        else:
+            for phs, edges in tl_phases.items():
+                phase_delays = []
+                for edge in edges:
+                    max_speed = speed_limits[tl_id][edge] 
+                    edge_velocities = [velocities[idv] for idv in vehicles[edge]]
+                    phase_delays += [_delay(vel / max_speed) for vel in edge_velocities]
+                delays.append(round(float(sum(phase_delays)), 4))
         features[tl_id] = tuple(delays)
     return features
 

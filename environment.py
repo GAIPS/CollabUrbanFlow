@@ -37,7 +37,7 @@ FEATURE_PHASE = {
 
 def simple_hash(x): return hash(x) % (11 * 255)
 def lval(x): return len(next(iter(x.values()))) 
-def toph(x, y): return tuple(FEATURE_PHASE[x] + [y])
+def toph(x, y): return tuple(FEATURE_PHASE[int(x)] + [y])
 
 def get_environment(network, episode_timesteps=3600, seed=0, thread_num=4):
     eng = engine_create(network, seed=seed, thread_num=thread_num)
@@ -229,9 +229,12 @@ class Environment(object):
 
     def _update_features(self):
         if self.feature == 'delay':
-            if self.use_lanes: raise NotImplementedError
-            return compute_delay(self.phases, self.vehicles,
-                                 self.speeds, self.max_speeds)
+            if self.use_lanes:
+                return compute_delay(self.lanes, self.vehicles,
+                                     self.speeds, self.max_speeds, self.use_lanes)
+            else:
+                return compute_delay(self.phases, self.vehicles,
+                                     self.speeds, self.max_speeds, self.use_lanes)
         if self.feature == 'wave':
             if self.use_lanes:
                 return compute_wave(self.lanes, self.vehicles, self.use_lanes)
@@ -336,9 +339,13 @@ class Environment(object):
         self.info_dict["rewards"].append(self.reward)
         self.info_dict["velocities"].append(0 if num_vehicles == 0 else sum_speeds / num_vehicles)
         self.info_dict["vehicles"].append(num_vehicles)
-        self.info_dict["observation_spaces"].append(self.observations) # No function approximation.
+        self.info_dict["observation_spaces"].append(self._sanitize_obs()) 
         self.info_dict["actions"].append({k: int(v) for k, v in actions.items()})
-        self.info_dict["states"].append(self.observations)
+        self.info_dict["states"].append(self._sanitize_obs())
         self.info_dict["timesteps"].append(self.timestep)
+
+    # typecast numpy types to python
+    def _sanitize_obs(self):
+        return {k:float(v) for k, values in self.observations.items() for v in values} 
 
 
