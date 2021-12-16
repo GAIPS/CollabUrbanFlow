@@ -17,7 +17,7 @@ from collections import defaultdict
 from utils.decorators import processable
 from models.rollouts import main as roll
 from utils import str2bool
-from utils.utils import concat
+from utils import concat
 
 mp = multiprocessing.get_context('spawn')
 

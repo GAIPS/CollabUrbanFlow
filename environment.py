@@ -23,7 +23,7 @@ from functools import cached_property
 
 from features import compute_delay, compute_pressure, compute_wave
 from utils.network import get_phases, get_lanes
-from utils.utils import flatten2
+from utils import flatten2
 from utils.file_io import engine_create, engine_load_config
 
 FEATURE_CHOICE = ('delay', 'wave', 'pressure')

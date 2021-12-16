@@ -118,6 +118,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
         # Load LOG data.
         df_log = pd.read_json(log_file.as_posix())
+
         df_log = df_log.merge(df_lengths, left_on='lane', right_index=True, how='left')
         # CITYFLOW: ids are shared between two different routes.
         df_log = df_log.reset_index() 

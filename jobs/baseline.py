@@ -163,6 +163,17 @@ def baseline_batch(baseline=None):
     demand_type = train_config.get('train_args', 'demand_type')
     demand_mode = train_config.get('train_args', 'demand_mode')
 
+    # env args
+    yellow = train_config.get('env_args', 'yellow')
+    min_green = train_config.get('env_args', 'min_green')
+    max_green = train_config.get('env_args', 'max_green')
+
+    # mdp args
+    feature = train_config.get('mdp_args', 'feature')
+    action_schema = train_config.get('mdp_args', 'action_schema')
+    phases_filter = train_config.get('mdp_args', 'phases_filter')
+    use_lanes = train_config.get('mdp_args', 'use_lanes')
+
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S.%f')
     print(f'Experiment timestamp: {timestamp}\n')
 
@@ -183,6 +194,17 @@ def baseline_batch(baseline=None):
                 'demand_mode': demand_mode,
                 'seed': seed,
                 'rollout-time': rollout_time,
+            }
+            baseline_config['env_args'] = {
+                'yellow': yellow,
+                'min_green': min_green,
+                'max_green': max_green,
+            }
+            baseline_config['mdp_args'] = {
+                'feature': feature,
+                'action_schema': action_schema,
+                'use_lanes': use_lanes,
+                'phases_filter': phases_filter
             }
             # Determine target path.
             cfg_path = tmpdir_path / f'{baseline}-{seed}.config'

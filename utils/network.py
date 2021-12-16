@@ -5,10 +5,12 @@
     ----------
     * https://cityflow.readthedocs.io/en/latest/roadnet.html
 """
+import json
 import numpy as np
 from scipy.sparse import csr_matrix
-from utils.utils import flatten, flatten2
+
 from utils import points2length
+from utils import flatten, flatten2
 
 def get_phases(roadnet, phases_filter=[]):
     """ Forms a traffic light phase
@@ -204,7 +206,7 @@ def get_adjacency_from_roadlinks(incoming, outgoing):
     return source
 
 def get_capacity_from_roadnet(roadnet, flows=None):
-    """Capacity from each tl_ids"""
+    """Capacity from each tl_ids per phase"""
 
     if flows is None:
         vehlen, vehgap = 5, 2.5
@@ -240,9 +242,44 @@ def get_capacity_from_roadnet(roadnet, flows=None):
         capacities[tl_id] = phase_capacities
     return capacities 
 
+def get_capacity_from_roadnet2(roadnet, flows=None):
+    """Capacity from each tl_ids per lane
+
+    Usage:
+    ------
+    >>> import json
+    >>> with open(roadnet_path, 'r') as f: roadnet = json.load(f)
+    >>> incoming, outgoing = get_capacity_from_roadnet2(roadnet)
+    >>> incoming
+    >>> {'intersection_1_1': 
+    >>>        {0: [('road_0_1_0_1', 10), ('road_0_1_0_0', 10), ('road_2_1_2_1', 10), ('road_2_1_2_0', 10)],
+    >>>         1: [('road_1_0_1_0', 10), ('road_1_0_1_0', 10), ('road_1_2_3_0', 11), ('road_1_2_3_0', 11)]},
+    >>>    'intersection_2_1': ...}
+    """
+
+    if flows is None:
+        vehlen, vehgap = 5, 2.5
+    else:
+        # Flows determine the min. length of the vehicles.
+        # min. length --> generates the maximum capacity.
+        vehlen = min([flow['vehicle']['length'] for flow in flows])
+        vehgap = min([flow['vehicle']['minGap'] for flow in flows])
+
+    def cap(pts): return int(points2length(*pts) / (vehlen + vehgap))
+
+    roads = roadnet['roads']
+    roads = {road['id']: int(cap(road['points']))  for road in roads}
+    incoming, outgoing, _ = get_phases(roadnet)
+    for approach in (incoming, outgoing):
+        for tl, phases in approach.items(): 
+            for ph, lanes in phases.items(): 
+                phases[ph] = [
+                    (lane, roads[lane[:-2]]) for lane in lanes
+                ]
+    return incoming, outgoing
+
 if __name__ == '__main__':
 
-    import json
     networks = ('arterial', 'grid_6')
     for network in networks:
         with open(f'data/networks/{network}/roadnet.json', 'r') as f: roadnet = json.load(f)
@@ -253,3 +290,7 @@ if __name__ == '__main__':
 
         print(f'vvvvvvvvvv   id_to_label({network})   vvvvvvvvvv') 
         print(id_to_label)
+
+        get_capacity_from_roadnet2(roadnet)
+
+        

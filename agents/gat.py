@@ -41,7 +41,7 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
 from environment import Environment
-from utils.utils import flatten
+from utils import flatten
 from utils.network import get_adjacency_from_env
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.gat import GAT

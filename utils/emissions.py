@@ -108,7 +108,6 @@ def get_vehicles(emissions_df):
     ).\
     rename(columns={'time': 'speed'}, inplace=False)
     # reset_index('route'). \
-
     # Builds a dataframe with the number of stops
     emissions_df['pos_rounded'] = emissions_df.pos.round(decimals=1)
 
@@ -136,6 +135,7 @@ def get_vehicles(emissions_df):
     join(wait_df, on='id', how='left')
     # Remove trips ending in the last timestep.
     # (because the vehicle may not have reached its destination)
+    # only completed trips
     vehs_df = vehs_df[vehs_df['finish'] < vehs_df['finish'].max()]
 
     # Calculate travel time.
@@ -148,7 +148,6 @@ def get_vehicles(emissions_df):
     vehs_df = vehs_df.join(
         stops_df, on='id', how='inner',
     )
-
     if 'length' in emissions_df:
         # Assumptions there are no loops
         # Gets unique timestamp for length
@@ -158,6 +157,7 @@ def get_vehicles(emissions_df):
             values='time',
             aggfunc=np.max
         )
+
         dist_df = pd.pivot_table(
             dist_df.reset_index(),
             index='id',

@@ -44,7 +44,7 @@ import pytorch_lightning as pl
 from utils.file_io import parse_train_parameters, \
     expr_logs_dump, expr_path_create, \
     expr_path_test_target
-from utils.utils import concat, flatten
+from utils import concat, flatten
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.dqn import DQN
 

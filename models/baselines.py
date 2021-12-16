@@ -22,7 +22,8 @@ from cityflow import Engine
 from environment import Environment
 from controllers import MaxPressure, Random, Static, Webster
 from utils.file_io import engine_create, engine_load_config, expr_logs_dump, \
-                            expr_path_create, expr_config_dump
+                            expr_path_create, expr_config_dump, parse_env_parameters, \
+                            parse_mdp_parameters
 # prevent randomization
 PYTHONHASHSEED=-1
 
@@ -46,13 +47,14 @@ def update_emissions(eng, emissions):
         emissions.append(emission_dict)
 
 def simple_hash(x): return hash(x) % (11 * 255)
-def g_list(): return []
-def g_dict(): return defaultdict(g_list)
-def get_controller(ts_type, config_folder):
-    if ts_type == 'max_pressure': return MaxPressure(5, 90, 5)
-    if ts_type == 'random': return Random(config_folder)
-    if ts_type == 'static': return Static(config_folder)
-    if ts_type == 'webster': return Webster(config_folder)
+def g_dict(): return defaultdict(list)
+
+def get_controller(ts_type, env_args, mdp_args, n_actions, config_folder):
+    if ts_type == 'max_pressure':
+        return MaxPressure(env_args, mdp_args, n_actions)
+    if ts_type == 'random': return Random(env_args, n_actions)
+    if ts_type == 'static': return Static(env_args, mdp_args, config_folder)
+    if ts_type == 'webster': return Webster(env_args, mdp_args, config_folder)
     raise ValueError(f'{ts_type} not defined.')
 
 def update_info_dict(actions, env, info_dict, observations):
@@ -75,8 +77,11 @@ def main(baseline_config_path=None):
     baseline_config.read(baseline_config_path)
     network = baseline_config.get('baseline_args', 'network')
     ts_type = baseline_config.get('baseline_args', 'ts_type')
-    # demand_type = baseline_config.get('baseline_args', 'demand_type')
-    # demand_mode = baseline_config.get('baseline_args', 'demand_mode')
+
+    #TODO: Make a special config section for the env.
+    env_args = parse_env_parameters(baseline_config_path)
+    mdp_args = parse_mdp_parameters(baseline_config_path)
+
     seed = int(baseline_config.get('baseline_args', 'seed'))
     rollout_time = int(baseline_config.get('baseline_args', 'rollout-time'))
 
@@ -98,49 +103,54 @@ def main(baseline_config_path=None):
     config['seed'] = seed
     with (config_dir_path / 'config.json').open('w') as f: json.dump(config, f)
 
-    ctrl = get_controller(ts_type, config_dir_path)
-    env = Environment(roadnet, eng, feature=ctrl.feature, step_size=ctrl.step_size, yellow=ctrl.yellow)
+    emit = ts_type != 'static'
+    env = Environment(network, roadnet, env_args, mdp_args, eng, emit=emit,
+                      episode_timesteps=rollout_time)
 
-    # Webster needs env data to initialize
-    if ts_type == 'webster':
-        ctrl.set_env(env)
-    # TODO: Allow for more types of controllers.
+    ctrl = get_controller(ts_type, env_args, mdp_args, 
+                          env.n_actions, config_dir_path)
 
     info_dict = g_dict()
     emissions = []
+    actions = {}
+    # Updates every second -- manipulates engine.
+    # Beware of incompatible roadnet definitions.
+    # to do -- create a step by step loop.
+    if ts_type in ('static', 'webster'):
+        env.reset()
 
-    # Run step by step for static and webster
-    if ts_type in ['static', 'webster']:
-        env._reset()
+        for _ in trange(rollout_time):
+            actions = ctrl.act(env.timestep)
+
+            if env.timestep % 5 == 0:
+                update_info_dict(actions, env, info_dict, env.observations)
+        
+            # action_schema == `set` 
+            for tl, action in actions.items():
+                env.engine.set_tl_phase(tl, 2 * action)
+            
+            update_emissions(eng, emissions)
+            if ts_type  == 'webster':
+                ctrl.update(env.vehicles)
+            env.engine.next_step()
     else:
         gen = env.loop(rollout_time)
-    try:
-        while True:
-            if ts_type in ['static', 'webster']:
-                observations = env.observations
-            else:
-                observations = next(gen)
 
-            if observations is not None:
-                actions = ctrl.act(observations)
+        try:
+            while True:
+                experience = next(gen)
+                if experience is not None:
+                    observations = experience[0]
+                    actions = ctrl.act(observations)
 
-                update_info_dict(actions, env, info_dict, observations)
+                    update_info_dict(actions, env, info_dict, observations)
 
-                if ts_type in ['static', 'webster']:
-                    env._phase_ctl(actions)
-                    eng.next_step()
-                    if eng.get_current_time() == rollout_time:
-                        break
-                else:
                     gen.send(actions)
-            update_emissions(eng, emissions)
 
-    except StopIteration as e:
-        result = e.value
+        except StopIteration as e:
+            result = e.value
+            emissions = env.emissions
 
-    #print global timings
-    if ts_type == 'webster':
-        ctrl.terminate()
     expr_logs_dump(target_path, 'emission_log.json', emissions)
     
     info_dict['id'] = f'{ts_type}-{seed}'

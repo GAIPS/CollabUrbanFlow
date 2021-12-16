@@ -6,7 +6,7 @@
 """
 from math import exp
 
-from utils.utils import flatten
+from utils import flatten
 
 def _delay(x): return exp(-5 * x)
 def _volume(vehs, edges): return sum([vehs[edge] for edge in edges])

@@ -163,10 +163,7 @@ def parse_mdp_parameters(
     mdp_args['feature'] = config_mdp_args['feature']
     mdp_args['action_schema'] = config_mdp_args['action_schema']
     mdp_args['phases_filter'] = eval(config_mdp_args['phases_filter'])
-    try:
-        mdp_args['use_lanes'] = str2bool(config_mdp_args['use_lanes'])
-    except Exception:
-        import ipdb; ipdb.set_trace()
+    mdp_args['use_lanes'] = str2bool(config_mdp_args['use_lanes'])
 
 
     return SimpleNamespace(**mdp_args)
