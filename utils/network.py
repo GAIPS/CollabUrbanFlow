@@ -64,8 +64,9 @@ def get_phases(roadnet, phases_filter=[]):
         roadlinks_outgoing = {}
         max_speeds = {}
         phase_num = 0
+
         for linkids in lightphases:
-            if any(linkids['availableRoadLinks']) and tn(phase_num):
+            if len(linkids['availableRoadLinks']) > 0 and tn(phase_num):
                 roadlinks = []
                 roadlinks_reverse = []
                 for linkid in linkids['availableRoadLinks']:
@@ -82,7 +83,7 @@ def get_phases(roadnet, phases_filter=[]):
                 roadlinks_incoming[phase_num] = roadlinks
                 roadlinks_outgoing[phase_num] = list(set(roadlinks_reverse))
 
-            phase_num += int(any(linkids['availableRoadLinks']))
+            phase_num += int(len(linkids['availableRoadLinks']) > 0)
         incoming[intersection['id']] = roadlinks_incoming
         outgoing[intersection['id']] = roadlinks_outgoing
 
