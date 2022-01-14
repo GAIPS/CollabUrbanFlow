@@ -178,9 +178,6 @@ class DQNLightning(pl.LightningModule):
         self.replay_size = replay_size
         self.warm_start_steps = warm_start_steps
         self.gamma = gamma
-        # self.epsilon_init = epsilon_init
-        # self.epsilon_final = epsilon_final
-        # self.epsilon_timesteps = epsilon_timesteps
         self.sync_rate = sync_rate
         self.lr = lr
         self.episode_timesteps = episode_timesteps
@@ -197,9 +194,9 @@ class DQNLightning(pl.LightningModule):
 
         # TODO: mdp_args
         self.n_agents = len(self.env.tl_ids)
-        self.n_input = 4
+        self.n_input = self.env.n_features
         self.n_hidden = 16
-        self.n_output = 2
+        self.n_output = self.env.n_actions
 
         # Auxiliary variables
         self._state_view_shape = (-1, self.n_agents, self.n_input)
