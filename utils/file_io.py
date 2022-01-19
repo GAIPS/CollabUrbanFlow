@@ -205,6 +205,7 @@ def parse_test_config(test_config_path):
     test_args['orig_path'] = config_test_args['run-path']
     test_args['rollout_time'] = int(config_test_args['rollout-time'])
     test_args['chkpt_num'] = int(config_test_args['chkpt-number'])
+    test_args['test'] = str2bool(config_test_args['test'])
     test_args['seed'] = int(config_test_args['seed'])
     test_args['chkpt_dir_path'] = Path(test_args['orig_path']) / 'checkpoints' 
     test_args['agent_type'] = config_test_args['agent_type']
@@ -216,7 +217,6 @@ def parse_test_config(test_config_path):
     # env_args['max_green'] = int(config_test_args['max_green'])
     env_args = parse_env_parameters(config_test_args)
     mdp_args = parse_mdp_parameters(config_test_args)
-
 
     return SimpleNamespace(**test_args), env_args, mdp_args 
 

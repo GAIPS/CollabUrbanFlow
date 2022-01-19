@@ -1,10 +1,12 @@
 
 import numpy as np
+import pandas as pd
 import torch
 from pytorch_lightning import Trainer, seed_everything
 
 from tqdm.auto import trange
 from utils.file_io import expr_logs_dump
+from utils.emissions import get_vehicles
 
 def train_loop(env, model, train_args, chkpt_dir, seed):
     experiment_time = train_args.experiment_time
@@ -45,7 +47,7 @@ def train_loop(env, model, train_args, chkpt_dir, seed):
 
     return env.info_dict
 
-def rollback_loop(env, agent, nets, rollout_time, target_path, seed):
+def rollback_loop(env, agent, nets, rollout_time, target_path, seed, test):
 
     env.emit = True
     seed_everything(seed)
@@ -55,6 +57,31 @@ def rollback_loop(env, agent, nets, rollout_time, target_path, seed):
     for timestep in trange(rollout_time//10, position=1):
         agent.play_step(nets, epsilon=0.0)
 
-    expr_logs_dump(target_path, 'emission_log.json', env.emissions)
+    ret = env.info_dict
+    if test: # rollout data
+        expr_logs_dump(target_path, 'emission_log.json', env.emissions)
+    else:
+        duration, inflow, outflow = get_metrics(env.emissions)
+        ret['duration'] =  [duration]
+        ret['inflow'] =  [inflow]
+        ret['outflow'] = [outflow] 
+    return ret
 
-    return env.info_dict
+def get_metrics(emissions_log):
+    '''Computes rollouts metrics according to Wei et al. 2019
+
+    Params:
+    -------
+    emissions_log:
+    '''
+    df_log = pd.DataFrame.from_dict(emissions_log)
+
+    df_log = df_log.reset_index() 
+    df_log['id'] = df_log['id'].map(str) + '_' + df_log['route'].map(str)
+
+    df_vehicles = get_vehicles(df_log, remove_unfinished=False) 
+
+    duration = df_vehicles['total'].mean()
+    inflow = df_vehicles.shape[0] 
+    outflow = df_vehicles[df_vehicles['finish'] < df_vehicles['finish'].max()].shape[0]
+    return duration, inflow, outflow

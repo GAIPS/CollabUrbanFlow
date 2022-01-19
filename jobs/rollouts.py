@@ -23,6 +23,9 @@ mp = multiprocessing.get_context('spawn')
 
 
 TRAIN_CONFIG_PATH = 'config/train.config'
+# gets at most the the lastest 10 checkpoints to rollout 
+# Wei, et al. 2019
+K_MAX_CHECKPOINT_NUM = 10 
 
 
 def get_train_path(batch_path):
@@ -102,7 +105,6 @@ def rollout_batch(test=False, experiment_dir=None):
 
     else:
         batch_path = Path(experiment_dir)
-
     chkpt_pattern = 'checkpoints'
 
     # Get names of train runs.
@@ -119,14 +121,16 @@ def rollout_batch(test=False, experiment_dir=None):
     if test:
         chkpts_nums = [chkpts_nums[-1]]
         rollouts_paths = list(itertools.product(experiment_names, chkpts_nums))
-    
         print('jobs/rollouts.py (test mode): using checkpoints'
                 ' number {0}'.format(chkpts_nums[0]))
     else:
+        # get the last 10 rollouts
+        chkpts_nums = chkpts_nums[-K_MAX_CHECKPOINT_NUM:]
+        print('jobs/rollouts.py (rollout mode): using checkpoints'
+                ' numbers {0}'.format(chkpts_nums))
         rollouts_paths = list(itertools.product(experiment_names, chkpts_nums))
 
-    # print(rollouts_paths)
-
+    # print(lrollouts_paths)
     run_config = configparser.ConfigParser()
     run_config.read('config/run.config')
 
@@ -152,9 +156,11 @@ def rollout_batch(test=False, experiment_dir=None):
     train_cfg_path = get_train_path(batch_path)
     train_config = configparser.ConfigParser()
     train_config.read(train_cfg_path)
+
     # train_args
     agent_type = train_config.get('agent_type', 'agent_type')
     network = train_config.get('train_args', 'network')
+
     # env args
     yellow = train_config.get('env_args', 'yellow')
     min_green = train_config.get('env_args', 'min_green')
@@ -207,6 +213,7 @@ def rollout_batch(test=False, experiment_dir=None):
             test_config.set(cfg_key, "seed", str(seed))
             test_config.set(cfg_key, "network", network)
             test_config.set(cfg_key, "agent_type", agent_type)
+            test_config.set(cfg_key, "test", str(test))
 
             # env_args
             test_config.set(cfg_key, "yellow", yellow)

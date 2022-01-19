@@ -7,11 +7,15 @@
 
         3) analysis/train_plots.py: create training plots.
 
-        4) Execute rollouts with last saved checkpoints (test).
+        4) Execute rollouts with 10 latest checkpoints (rollouts).
 
-        5) Create plots with metrics plots for final agent.
+        5) Run analysis/rollouts_stats.py: create rollouts_stats.csv
 
-        5) Clean up and compress the experiment folder in
+        6) Execute rollouts with last saved checkpoints (test).
+
+        7) Run analysis/test_plots.py: create test plots.
+
+        8) Clean up and compress the experiment folder in
             order to optimize disk space usage.
 
 """
@@ -31,6 +35,7 @@ from jobs.train import train_batch as train
 from jobs.pretrain import pretrain_batch as pretrain
 from jobs.rollouts import rollout_batch as rollouts
 from analysis.train_plots import main as train_plots
+from analysis.rollouts_metrics import main as rollouts_stats
 from analysis.test_plots import main as test_plots
 
 def get_arguments():
@@ -59,13 +64,19 @@ if __name__ == '__main__':
     # 3) Create train plots.
     train_plots(experiment_root_path)
 
-    # 4) Execute rollouts with last saved checkpoints (test).
+    # 4) Execute rollouts with 10 latest checkpoints (rollouts).
+    rollouts(test=False, experiment_dir=experiment_root_path)
+    
+    # 5) Run analysis/rollouts_stats.py: create rollouts_stats.csv
+    rollouts_stats(experiment_root_path)
+
+    # 6) Execute rollouts with last saved checkpoints (test).
     rollouts(test=True, experiment_dir=experiment_root_path)
 
-    # 5) Create plots with metrics plots for final agent.
+    # 7) Run analysis/test_plots.py: create test plots.
     test_plots(experiment_root_path)
 
-    # 6) Cleaning emissions.
+    # 8) Clean up and compress the experiment folder in
     print('\nCleaning and compressing files...\n')
     experiment_root_path = Path(experiment_root_path)
     for csv_path in experiment_root_path.rglob('emission_log.json'):

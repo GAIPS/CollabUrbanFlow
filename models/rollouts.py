@@ -52,13 +52,15 @@ def main(test_config_path=None):
     orig_path =  opt.orig_path
     rollout_time =  opt.rollout_time
     chkpt_num =  opt.chkpt_num
+    test = opt.test
+    
     seed =  opt.seed
     agent_type = opt.agent_type
     network = opt.network
     chkpt_dir_path = Path(orig_path) / 'checkpoints' 
 
     # DETERMINE target
-    target_path = expr_path_test_target(orig_path)
+    target_path = chkpt_dir_path / str(chkpt_num)
 
     # TODO: replace by pathlib
     print(f'Experiment: {str(target_path)}\n')
@@ -83,7 +85,7 @@ def main(test_config_path=None):
 
     rollback_loop = get_loop(agent_type, train=False)
     if agent_type in ('DQN', 'GAT'):
-        info_dict = rollback_loop(env, agent, nets, rollout_time, target_path, seed)
+        info_dict = rollback_loop(env, agent, nets, rollout_time, target_path, seed, test)
     else:
         agent.stop()
         info_dict = rollback_loop(env, agent, approx, rollout_time, target_path, seed)

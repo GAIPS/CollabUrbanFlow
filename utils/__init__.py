@@ -86,3 +86,7 @@ def flatten(items, ignore_types=(str, bytes)):
 
 def flatten2(items, ignore_types=(str, bytes)):
     return [item for item in flatten(items)]
+
+# reduce a list of list by using the average
+def reduce_mean(items):
+    return [v for v in  map(np.mean, items)]

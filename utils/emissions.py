@@ -49,15 +49,19 @@ def get_emissions(file_path, exclude_emissions=EXCLUDE_EMISSION):
 
     return df
 
-def get_vehicles(emissions_df):
+def get_vehicles(emissions_df, remove_unfinished=True):
     """Returns vehicle data
 
     On cityflow vehicles are not unique. The same index is
     used by different routes.
+
     Parameters:
     ----------
     * emissions_df: pandas DataFrame
         SEE get_emission
+
+    * remove_unfinished: bool
+        Removes vehicles that are still traveling.
 
     Usage:
     -----
@@ -136,7 +140,8 @@ def get_vehicles(emissions_df):
     # Remove trips ending in the last timestep.
     # (because the vehicle may not have reached its destination)
     # only completed trips
-    vehs_df = vehs_df[vehs_df['finish'] < vehs_df['finish'].max()]
+    if remove_unfinished:
+        vehs_df = vehs_df[vehs_df['finish'] < vehs_df['finish'].max()]
 
     # Calculate travel time.
     vehs_df['total'] = vehs_df['finish'] - vehs_df['start']
@@ -220,3 +225,15 @@ def get_intersections(df_emission):
 
 
 
+
+# if __name__ == '__main__':
+#     from pathlib import Path
+#     import json
+#     # Should do this for every round
+#     emission_path = Path('20220118171852.613553/3_3_20220118171855-31/logs/emission_log.json')
+#     # emission_path = Path('20220118171852.613553/3_3_20220118171854-21/logs/emission_log.json')
+#     with emission_path.open('r') as f: 
+#         emissions_log = json.load(f)
+#     duration, inflow, outflow = get_metrics(emissions_log)
+#     duration, inflow, outflow = merge_metrics([duration]*10, [inflow]*10, [outflow]*10)
+#     import ipdb; ipdb.set_trace()

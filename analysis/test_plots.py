@@ -1,9 +1,13 @@
+import sys
 import os
 import json
 import pandas as pd
 import argparse
 import numpy as np
 from pathlib import Path
+sys.path.append(Path.cwd().as_posix())
+print(sys.path)
+
 from scipy import stats
 import configparser
 
@@ -124,7 +128,6 @@ def main(experiment_root_folder=None, config_filename='train.config'):
         df_log = df_log.reset_index() 
         df_log['id'] = df_log['id'].map(str) + '_' + df_log['route'].map(str)
         df_log['waiting'] = (df_log['speed'] < 0.01).astype(int)
-
         df_per_vehicle = get_vehicles(df_log)
 
         df_per_vehicle_mean = df_per_vehicle.mean()
