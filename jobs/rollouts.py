@@ -23,9 +23,9 @@ mp = multiprocessing.get_context('spawn')
 
 
 TRAIN_CONFIG_PATH = 'config/train.config'
-# gets at most the the lastest 10 checkpoints to rollout 
+# gets at most the the latest 50 checkpoints to rollout 
 # Wei, et al. 2019
-K_MAX_CHECKPOINT_NUM = 10 
+K_MAX_CHECKPOINT_NUM = 50
 
 
 def get_train_path(batch_path):
