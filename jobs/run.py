@@ -56,7 +56,7 @@ if __name__ == '__main__':
     # 1) Estimates initial weights
     flags = get_arguments()
 
-    if flags.pretrain: pretrain()
+    # if flags.pretrain: pretrain()
 
     # 2) Train agent(s).
     experiment_root_path = train()
@@ -77,10 +77,11 @@ if __name__ == '__main__':
     test_plots(experiment_root_path)
 
     # 8) Clean up and compress the experiment folder in
-    print('\nCleaning and compressing files...\n')
+    # print('\nCleaning and compressing files...\n')
     experiment_root_path = Path(experiment_root_path)
-    for csv_path in experiment_root_path.rglob('emission_log.json'):
-        Path(csv_path).unlink()
+    for filename in ('emission_log.json', 'rollouts_log.json'):
+        for csv_path in experiment_root_path.rglob('emission_log.json'):
+            Path(csv_path).unlink()
 
     shutil.make_archive(experiment_root_path,
                     'gztar',

@@ -187,12 +187,15 @@ def rollout_batch(test=False, experiment_dir=None):
     print(f'Num. rollout total: {len(rollouts_paths) * num_rollouts}')
     print(f'Rollout time: {rollout_time}\n')
 
+    # FIXME: Separete Rollouts from Tests.
     # Allocate seeds.
     custom_configs = []
     for rn, rp in enumerate(rollouts_paths):
-        base_seed = max(train_seeds) + num_rollouts * rn
+        # base_seed = max(train_seeds) + num_rollouts * rn
         for rr in range(num_rollouts):
-            seed = base_seed + rr + 1
+            # seed = base_seed + rr + 1
+            # FIXME: Undo seed = 0.
+            seed = 0
             custom_configs.append((rp, seed))
 
     with tempfile.TemporaryDirectory() as f:

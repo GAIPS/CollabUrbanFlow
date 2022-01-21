@@ -61,27 +61,29 @@ def rollback_loop(env, agent, nets, rollout_time, target_path, seed, test):
     if test: # rollout data
         expr_logs_dump(target_path, 'emission_log.json', env.emissions)
     else:
-        duration, inflow, outflow = get_metrics(env.emissions)
-        ret['duration'] =  [duration]
-        ret['inflow'] =  [inflow]
-        ret['outflow'] = [outflow] 
+        expr_logs_dump(target_path, 'rollouts_log.json', env.rollouts)
+        # TODO: Deprecate
+        # duration, inflow, outflow = get_metrics(env.emissions)
+        # ret['duration'] =  [duration]
+        # ret['inflow'] =  [inflow]
+        # ret['outflow'] = [outflow] 
     return ret
 
-def get_metrics(emissions_log):
-    '''Computes rollouts metrics according to Wei et al. 2019
-
-    Params:
-    -------
-    emissions_log:
-    '''
-    df_log = pd.DataFrame.from_dict(emissions_log)
-
-    df_log = df_log.reset_index() 
-    df_log['id'] = df_log['id'].map(str) + '_' + df_log['route'].map(str)
-
-    df_vehicles = get_vehicles(df_log, remove_unfinished=False) 
-
-    duration = df_vehicles['total'].mean()
-    inflow = df_vehicles.shape[0] 
-    outflow = df_vehicles[df_vehicles['finish'] < df_vehicles['finish'].max()].shape[0]
-    return duration, inflow, outflow
+# TODO: Deprecate
+# def get_metrics(emissions_log):
+#     '''Computes rollouts metrics according to Wei et al. 2019
+# 
+#     Params:
+#     -------
+#     emissions_log:
+#     '''
+#     df_log = pd.DataFrame.from_dict(emissions_log)
+# 
+#     df_log = df_log.reset_index() 
+#     df_log['id'] = df_log['id'].map(str) + '_' + df_log['route'].map(str)
+# 
+#     df_vehicles = get_vehicles(df_log, remove_unfinished=False) 
+#     duration = df_vehicles['total'].mean()
+#     inflow = df_vehicles.shape[0] 
+#     outflow = df_vehicles[df_vehicles['finish'] < df_vehicles['finish'].max()].shape[0]
+#     return duration, inflow, outflow

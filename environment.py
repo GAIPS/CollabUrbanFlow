@@ -23,7 +23,7 @@ from functools import cached_property
 
 from features import compute_delay, compute_pressure, compute_wave
 from utils.network import get_phases, get_lanes
-from utils import flatten2
+from utils import flatten as flat
 from utils.file_io import engine_create, engine_load_config
 
 FEATURE_CHOICE = ('delay', 'wave', 'pressure')
@@ -109,6 +109,7 @@ class Environment(object):
         self._emissions = []
         self.info_dict = defaultdict(list)
 
+        self._rollouts = {tl: {} for tl in self.tl_ids}
         if engine is not None: self.engine = engine
 
     @property
@@ -139,6 +140,24 @@ class Environment(object):
     @property
     def emissions(self):
         return self._emissions
+
+    @cached_property
+    def rollouts(self):
+        ret = defaultdict(list)
+        i = 0
+        for tl, vehicles in self._rollouts.items():
+            for veh, arrival_departure in vehicles.items():
+                start =  arrival_departure['start']
+                finish = arrival_departure['finish']
+                ret['id'].append(i)
+                ret['vehicle_id'].append(veh)
+                ret['start'].append(start)
+                ret['finish_original'].append(finish)
+
+                if finish is None: finish = self._episode_timestep 
+                ret['finish'].append(finish)
+                i += 1
+        return ret
 
     @cached_property
     def tl_ids(self):
@@ -180,7 +199,7 @@ class Environment(object):
     def vehicles(self):
         return self._get_lane_vehicles(self.timestep)
 
-    @lru_cache(maxsize=1)
+    @lru_cache(maxsize=2)
     def _get_lane_vehicles(self, timestep):
         return self.engine.get_lane_vehicles()
 
@@ -263,6 +282,29 @@ class Environment(object):
                     'y': 0
                 })
 
+    # logs according to colight
+    def _update_rollouts(self):
+        if self.timestep == 0:
+            vehicles_prev = {}
+        else:
+            vehicles_prev = self._get_lane_vehicles(self.timestep - 1)
+        vehicles_curr = self.vehicles
+
+        for tl, roads in self.lanes.items():
+            vehicles_prev_step_set = \
+                {veh for k, v in vehicles_prev.items() if k in roads for veh in flat(v) }
+            vehicles_curr_step_set = \
+                {veh for k, v in vehicles_curr.items() if k in roads for veh in flat(v)}
+
+            new_arrivals = list(vehicles_curr_step_set - vehicles_prev_step_set)
+            new_exits = list(vehicles_prev_step_set - vehicles_curr_step_set)
+            for veh in new_arrivals:
+                self._rollouts[tl][veh] = {'start': self.timestep, 'finish': None} 
+
+            for veh in new_exits:
+                self._rollouts[tl][veh]['finish'] = self.timestep
+
+
     def loop(self, num_steps):
         # Before
         self.reset()
@@ -284,7 +326,9 @@ class Environment(object):
         if self.is_observation_step:
             self._phase_ctl(actions)
         self.engine.next_step()
-        if self.emit: self._update_emissions()
+        if self.emit:
+            self._update_emissions()
+            self._update_rollouts()
         if self.is_observation_step:
             return self.observations, self.reward, self.done, None
         return None
