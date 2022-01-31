@@ -17,9 +17,6 @@ import configparser
 import numpy as np
 from cityflow import Engine
 from pytorch_lightning import seed_everything
-# FIXME: REMOVE
-import sys; sys.path.append(Path.cwd().as_posix())
-
 
 from environment import Environment
 from approximators.tile_coding import TileCodingApproximator

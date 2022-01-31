@@ -49,7 +49,7 @@ def get_emissions(file_path, exclude_emissions=EXCLUDE_EMISSION):
 
     return df
 
-def get_vehicles(emissions_df, remove_unfinished=True):
+def get_vehicles(emissions_df, remove_unfinished=False):
     """Returns vehicle data
 
     On cityflow vehicles are not unique. The same index is
@@ -142,6 +142,9 @@ def get_vehicles(emissions_df, remove_unfinished=True):
     # only completed trips
     if remove_unfinished:
         vehs_df = vehs_df[vehs_df['finish'] < vehs_df['finish'].max()]
+    else:
+        # Remove trips where the departure is less than a minute from final.
+        vehs_df = vehs_df[vehs_df['start'] <= vehs_df['finish'].max() - 60]
 
     # Calculate travel time.
     vehs_df['total'] = vehs_df['finish'] - vehs_df['start']

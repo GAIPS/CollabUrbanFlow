@@ -6,15 +6,9 @@
     * Generators
         http://www.dabeaz.com/finalgenerator/FinalGenerator.pdf
 """
-import os, sys
 from collections import defaultdict
 from pathlib import Path
-#from shutil import copyfile
-# FIXME: DEBUG
-# append the path of the parent directory
-sys.path.append(Path.cwd().as_posix())
-
-
+ys
 import numpy as np
 from environment import Environment
 from agents import get_agent

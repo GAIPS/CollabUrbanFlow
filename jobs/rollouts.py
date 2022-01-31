@@ -23,9 +23,9 @@ mp = multiprocessing.get_context('spawn')
 
 
 TRAIN_CONFIG_PATH = 'config/train.config'
-# gets at most the the latest 50 checkpoints to rollout 
+# gets at most the the latest 10 checkpoints to rollout 
 # Wei, et al. 2019
-K_MAX_CHECKPOINT_NUM = 50
+K_MAX_CHECKPOINT_NUM = 10
 
 
 def get_train_path(batch_path):
@@ -92,7 +92,8 @@ def delay_roll(args):
 
 def rollout_batch(test=False, experiment_dir=None):
 
-    print('\nRUNNING jobs/rollouts.py\n')
+    mode = 'test' if test else 'rollout'
+    print(f'\nRUNNING jobs/rollouts.py ({mode} mode)\n')
 
     if not experiment_dir:
 
@@ -175,27 +176,24 @@ def rollout_batch(test=False, experiment_dir=None):
     # Override rollouts config files with test.config file parameters.
     test_config = configparser.ConfigParser()
     test_config.read('config/test.config')
-    num_rollouts = int(test_config.get('test_args', 'num-rollouts'))
+    num_rollouts = 1 if test else int(test_config.get('test_args', 'num-rollouts'))
     rollout_time = test_config.get('test_args', 'rollout-time')
 
     print(f'\nArguments (jobs/test.py):')
     print('-------------------------')
     print(f'Experiment dir: {batch_path}')
     print(f'Number of processors: {num_processors}')
-    print(f'Num. rollout files: {len(rollouts_paths)}')
-    print(f'Num. rollout repetitions: {num_rollouts}')
-    print(f'Num. rollout total: {len(rollouts_paths) * num_rollouts}')
+    print(f'Num. {mode} files: {len(rollouts_paths)}')
+    print(f'Num. {mode} repetitions: {num_rollouts}')
+    print(f'Num. {mode} total: {len(rollouts_paths) * num_rollouts}')
     print(f'Rollout time: {rollout_time}\n')
 
-    # FIXME: Separete Rollouts from Tests.
     # Allocate seeds.
     custom_configs = []
     for rn, rp in enumerate(rollouts_paths):
-        # base_seed = max(train_seeds) + num_rollouts * rn
+        base_seed = max(train_seeds) + num_rollouts * rn
         for rr in range(num_rollouts):
-            # seed = base_seed + rr + 1
-            # FIXME: Undo seed = 0.
-            seed = 0
+            seed = base_seed + rr + 1
             custom_configs.append((rp, seed))
 
     with tempfile.TemporaryDirectory() as f:

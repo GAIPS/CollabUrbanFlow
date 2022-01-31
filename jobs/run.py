@@ -56,7 +56,7 @@ if __name__ == '__main__':
     # 1) Estimates initial weights
     flags = get_arguments()
 
-    # if flags.pretrain: pretrain()
+    if flags.pretrain: pretrain()
 
     # 2) Train agent(s).
     experiment_root_path = train()
