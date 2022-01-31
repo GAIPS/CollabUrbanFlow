@@ -8,7 +8,7 @@
 """
 from collections import defaultdict
 from pathlib import Path
-ys
+
 import numpy as np
 from environment import Environment
 from agents import get_agent
