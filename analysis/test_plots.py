@@ -94,7 +94,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     os.makedirs(output_folder_path, exist_ok=True)
 
     # Get cycle length from tls_config.json file.
-    decision_step = 5
+    decision_step = 10
 
     # Get all *.csv files from experiment root folder.
     log_files = [p for p in Path(experiment_root_folder).rglob('emission_log.json')]
@@ -132,43 +132,13 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
         df_per_vehicle_mean = df_per_vehicle.mean()
 
-        if demand_type not in ('constant',):
-
-            # Congested regime.
-            df_congested_period = df_per_vehicle[(df_per_vehicle['finish'] > CONGESTED_INTERVAL[0]) \
-                                                    & (df_per_vehicle['finish'] < CONGESTED_INTERVAL[1])]
-            df_congested_period_mean = df_congested_period.mean()
-
-            # Free-flow.
-            df_free_flow_period = df_per_vehicle[(df_per_vehicle['finish'] > FREE_FLOW_INTERVAL[0]) \
-                                                    & (df_per_vehicle['finish'] < FREE_FLOW_INTERVAL[1])]
-            df_free_flow_period_mean = df_free_flow_period.mean()
-
-            mean_values_per_eval.append({'train_run': Path(log_file).parts[-4],
-                                        'speed': df_per_vehicle_mean['speed'],
-                                        'velocity': df_per_vehicle_mean['velocity'],
-                                        'stops': df_per_vehicle_mean['stops'],
-                                        'waiting_time': df_per_vehicle_mean['waiting'],
-                                        'travel_time': df_per_vehicle_mean['total'],
-                                        'speed_congested': df_congested_period_mean['speed'],
-                                        'velocity_congested': df_congested_period_mean['velocity'],
-                                        'stops_congested': df_congested_period_mean['stops'],
-                                        'waiting_time_congested': df_congested_period_mean['waiting'],
-                                        'travel_time_congested': df_congested_period_mean['total'],
-                                        'speed_free_flow': df_free_flow_period_mean['speed'],
-                                        'velocity_free_flow': df_free_flow_period_mean['velocity'],
-                                        'stops_free_flow': df_free_flow_period_mean['stops'],
-                                        'waiting_time_free_flow': df_free_flow_period_mean['waiting'],
-                                        'travel_time_free_flow': df_free_flow_period_mean['total'],
-                                        'throughput': len(df_per_vehicle)})
-        else:
-            mean_values_per_eval.append({'train_run': Path(log_file).parts[-4],
-                                        'speed': df_per_vehicle_mean['speed'],
-                                        'velocity': df_per_vehicle_mean['velocity'],
-                                        'stops': df_per_vehicle_mean['stops'],
-                                        'waiting_time': df_per_vehicle_mean['waiting'],
-                                        'travel_time': df_per_vehicle_mean['total'],
-                                        'throughput': len(df_per_vehicle)})
+        mean_values_per_eval.append({'train_run': Path(log_file).parts[-4],
+                                    'speed': df_per_vehicle_mean['speed'],
+                                    'velocity': df_per_vehicle_mean['velocity'],
+                                    'stops': df_per_vehicle_mean['stops'],
+                                    'waiting_time': df_per_vehicle_mean['waiting'],
+                                    'travel_time': df_per_vehicle_mean['total'],
+                                    'throughput': len(df_per_vehicle)})
                 
 
 
@@ -186,13 +156,8 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
     # Write mean values per eval into a csv file.
     df_mean_metrics_per_eval = pd.DataFrame(mean_values_per_eval)
-    if demand_type not in ('constant',):
-        cols = ["train_run", "speed", "stops", "waiting_time", "travel_time", "throughput",
-                "speed_congested", "velocity_congested", "stops_congested", "waiting_time_congested", "travel_time_congested",
-                "speed_free_flow", "velocity_free_flow", "stops_free_flow", "waiting_time_free_flow", "travel_time_free_flow"]
-    else:
-        cols = ["train_run", "speed", "stops", "waiting_time",
-                "travel_time", "throughput"]
+    cols = ["train_run", "speed", "stops", "waiting_time",
+            "travel_time", "throughput"]
 
     df_mean_metrics_per_eval.to_csv('{0}/{1}_metrics.csv'.format(
                                             output_folder_path,
@@ -720,7 +685,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     df_per_cycle = df_vehicles_appended.groupby(pd.cut(df_vehicles_appended["finish"], intervals)).mean()
 
     """
-        Waiting time per cycle.
+        Waiting time per Timestep.
     """
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
@@ -735,7 +700,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
     plt.plot(X,Y)
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Timestep')
     plt.ylabel('Average waiting time (s)')
     # plt.title('Waiting time')
     plt.savefig('{0}/waiting_time.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
@@ -743,7 +708,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     plt.close()
 
     """
-        Travel time per cycle.
+        Travel time per Timestep.
     """
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
@@ -758,7 +723,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
     plt.plot(X,Y)
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Timestep')
     plt.ylabel('Average travel time (s)')
     # plt.title('Travel time')
     plt.savefig('{0}/travel_time.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
@@ -766,7 +731,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     plt.close()
 
     """
-        Throughput per cycle.
+        Throughput per Timestep.
         TODO: Enable throughput computation
     """
     # # Throughput per cycle.
@@ -807,7 +772,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     id = str(json_data['id'][0])
 
     """
-        Rewards per intersection (per cycle).
+        Rewards per intersection (per Timestep).
     """
     dfs_r = [pd.DataFrame(r) for r in json_data['rewards'][id]]
 
@@ -822,7 +787,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     for col in df_rewards.columns:
         plt.plot(df_rewards[col].rolling(window=40).mean(), label=col)
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Timestep')
     plt.ylabel('Reward')
     # plt.title('Rewards per intersection')
     plt.legend()
@@ -833,14 +798,14 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     plt.close()
 
     """
-        Total rewards (per cycle).
+        Total rewards (per Timestep).
     """
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y) 
 
     plt.plot(df_rewards.sum(axis=1))
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Timestep')
     plt.ylabel('Reward')
     # plt.title('Cumulative reward')
 
@@ -856,80 +821,47 @@ def main(experiment_root_folder=None, config_filename='train.config'):
                     float_format='%.3f', header=False)
 
     """
-        Actions per intersection (per cycle).
+        Actions per intersection (per Timestep).
 
         WARNING: This might require different processing here. As an example,
             the actions taken by the DQN actions (discrete action agent)
             differ from the ones taken by the DDPG agent (continuous action
             agent).
     """
-    if agent_type in ('DDPG', 'MPO'):
-        # Continuous action-schema.
-        # TODO: This only works for two-phased intersections.
-        dfs_a = [pd.DataFrame([{i: round(a[0], 4) for (i, a) in t.items()}
-                                for t in run])
-                                    for run in json_data['actions'][id]]
-        df_concat = pd.concat(dfs_a)
+    # Discrete action-schema.
+    dfs_a = [pd.DataFrame(run) for run in json_data['actions'][id]]
 
-        by_row_index = df_concat.groupby(df_concat.index)
-        df_actions = by_row_index.mean()
+    df_concat = pd.concat(dfs_a)
 
-        fig = plt.figure()
-        fig.set_size_inches(FIGURE_X, FIGURE_Y)
+    by_row_index = df_concat.groupby(df_concat.index)
+    df_actions = by_row_index.mean()
 
-        # window_size = min(len(df_actions)-1, 40)
+    fig = plt.figure()
+    fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-        for col in df_actions.columns:
-            plt.plot(df_actions[col], label=col) # .rolling(window=window_size).mean()
+    for col in df_actions.columns:
+        plt.plot(df_actions[col].rolling(window=40).mean(), label=col)
 
-        plt.xlabel('Cycle')
-        plt.ylabel('Action (phase-1 allocation)')
-        # plt.title('Actions per intersection')
-        plt.legend()
+    plt.xlabel('Timestep')
+    plt.ylabel('Action')
+    # plt.title('Actions per intersection')
+    plt.legend()
 
-        plt.ylim(0.0,1.0)
+    plt.ylim(-0.2,6.2)
+    plt.yticks(ticks=[0,1,2,3,4,5,6], labels=['(30,70)', '(36,63)', '(43,57)', '(50,50)', '(57,43)', '(63,37)', '(70,30)'])
 
-        plt.savefig('{0}/actions_per_intersection.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-        plt.savefig('{0}/actions_per_intersection.png'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
+    plt.savefig('{0}/actions_per_intersection.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
+    plt.savefig('{0}/actions_per_intersection.png'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
 
-        plt.close()
-
-    else:
-        # Discrete action-schema.
-        dfs_a = [pd.DataFrame(run) for run in json_data['actions'][id]]
-
-        df_concat = pd.concat(dfs_a)
-
-        by_row_index = df_concat.groupby(df_concat.index)
-        df_actions = by_row_index.mean()
-
-        fig = plt.figure()
-        fig.set_size_inches(FIGURE_X, FIGURE_Y)
-
-        for col in df_actions.columns:
-            plt.plot(df_actions[col].rolling(window=40).mean(), label=col)
-
-        plt.xlabel('Cycle')
-        plt.ylabel('Action')
-        # plt.title('Actions per intersection')
-        plt.legend()
-
-        plt.ylim(-0.2,6.2)
-        plt.yticks(ticks=[0,1,2,3,4,5,6], labels=['(30,70)', '(36,63)', '(43,57)', '(50,50)', '(57,43)', '(63,37)', '(70,30)'])
-
-        plt.savefig('{0}/actions_per_intersection.pdf'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-        plt.savefig('{0}/actions_per_intersection.png'.format(output_folder_path), bbox_inches='tight', pad_inches=0)
-
-        plt.close()
+    plt.close()
 
     """
-        Number of vehicles per cycle.
+        Number of vehicles per Timestep.
     """
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
     dfs_veh = [pd.DataFrame(r) for r in json_data['vehicles'][id]]
-
     df_concat = pd.concat(dfs_veh)
 
     by_row_index = df_concat.groupby(df_concat.index)
@@ -945,7 +877,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
     plt.plot(X,Y)
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Timestep')
     plt.ylabel('Number of vehicles')
     # plt.title('Number of vehicles')
 
@@ -955,7 +887,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
     plt.close()
 
     """
-        Average vehicles' velocity per cycle.
+        Average vehicles' velocity per Timestep.
     """
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
@@ -977,7 +909,7 @@ def main(experiment_root_folder=None, config_filename='train.config'):
 
     plt.plot(X,Y)
 
-    plt.xlabel('Cycle')
+    plt.xlabel('Timestep')
     plt.ylabel('Average velocity (m/s)')
     # plt.title('Vehicles\' velocities')
 

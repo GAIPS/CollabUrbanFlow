@@ -122,7 +122,7 @@ def main(baseline_config_path=None):
         for _ in trange(rollout_time):
             actions = ctrl.act(env.timestep)
 
-            if env.timestep % 5 == 0:
+            if env.timestep % 10 == 0:
                 update_info_dict(actions, env, info_dict, env.observations)
         
             # action_schema == `set` 

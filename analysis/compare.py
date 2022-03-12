@@ -149,7 +149,7 @@ def main():
     #              df['waiting_time_per_cycle', 'y'],
     #              label=l)
 
-    # plt.xlabel('Cycle')
+    # plt.xlabel('Timestep (10 s)')
     # plt.ylabel('Average waiting time (s)')
     # plt.legend()
     # # plt.title('Waiting time')
@@ -162,23 +162,23 @@ def main():
     # """
     #     travel_time_per_cycle
     # """
-    # fig = plt.figure()
-    # fig.set_size_inches(FIGURE_X, FIGURE_Y)
+    fig = plt.figure()
+    fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    # for l, df in zip(lbls, dfs.values()):
-    #     plt.plot(df['travel_time_per_cycle', 'x'],
-    #              df['travel_time_per_cycle', 'y'],
-    #              label=l)
+    for lbl, df in zip(lbls, dfs.values()):
+        plt.plot(df['travel_time_per_cycle', 'x'],
+                 df['travel_time_per_cycle', 'y'],
+                 label=lbl)
 
-    # plt.xlabel('Cycle')
-    # plt.ylabel('Average travel time (s)')
-    # plt.legend()
-    # # plt.title('Travel time')
+    plt.xlabel('Timestep (10 s)')
+    plt.ylabel('Average travel time (s)')
+    plt.legend()
+    # plt.title('Travel time')
 
-    # plt.savefig('analysis/plots/compare/compare_travel_time.pdf', bbox_inches='tight', pad_inches=0)
-    # plt.savefig('analysis/plots/compare/compare_travel_time.png', bbox_inches='tight', pad_inches=0)
-    # 
-    # plt.close()
+    plt.savefig('analysis/plots/compare/compare_travel_time.pdf', bbox_inches='tight', pad_inches=0)
+    plt.savefig('analysis/plots/compare/compare_travel_time.png', bbox_inches='tight', pad_inches=0)
+    
+    plt.close()
 
     """
         throughput_per_cycle
@@ -191,7 +191,7 @@ def main():
     #              df['throughput_per_cycle', 'y'],
     #              label=l)
 
-    # plt.xlabel('Cycle')
+    # plt.xlabel('Timestep (10 s)')
     # plt.ylabel('Number of vehicles')
     # plt.legend()
     # # plt.title('Throughput')
@@ -201,18 +201,17 @@ def main():
 
     # plt.close()
 
-    """
-        vehicles_per_cycle
-    """
+    # """
+    #     vehicles_per_cycle
+    # """
     fig = plt.figure()
     fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    for l, df in zip(lbls, dfs.values()):
+    for lbl, df in zip(lbls, dfs.values()):
         plt.plot(df['vehicles_per_cycle', 'x'],
                  df['vehicles_per_cycle', 'y'],
-                 label=l)
-
-    plt.xlabel('Cycle')
+                 label=lbl)
+    plt.xlabel('Timestep (10 seconds)')
     plt.ylabel('Number of vehicles')
     # plt.title('Number of vehicles')
     plt.legend()
@@ -222,26 +221,26 @@ def main():
 
     plt.close()
 
-    """
-        velocities_per_cycle
-    """
-    fig = plt.figure()
-    fig.set_size_inches(FIGURE_X, FIGURE_Y)
+    # """
+    #     velocities_per_cycle
+    # """
+    # fig = plt.figure()
+    # fig.set_size_inches(FIGURE_X, FIGURE_Y)
 
-    for l, df in zip(lbls, dfs.values()):
-        plt.plot(df['velocities_per_cycle', 'x'],
-                 df['velocities_per_cycle', 'y'],
-                 label=l)
+    # for l, df in zip(lbls, dfs.values()):
+    #     plt.plot(df['velocities_per_cycle', 'x'],
+    #              df['velocities_per_cycle', 'y'],
+    #              label=l)
 
-    plt.xlabel('Cycle')
-    plt.ylabel('Average velocity (m/s)')
-    # plt.title('Vehicles\' velocities')
-    plt.legend()
+    # plt.xlabel('Timestep (10 s)')
+    # plt.ylabel('Average velocity (m/s)')
+    # # plt.title('Vehicles\' velocities')
+    # plt.legend()
 
-    plt.savefig('analysis/plots/compare/compare_velocities.pdf', bbox_inches='tight', pad_inches=0)
-    plt.savefig('analysis/plots/compare/compare_velocities.png', bbox_inches='tight', pad_inches=0)
+    # plt.savefig('analysis/plots/compare/compare_velocities.pdf', bbox_inches='tight', pad_inches=0)
+    # plt.savefig('analysis/plots/compare/compare_velocities.png', bbox_inches='tight', pad_inches=0)
 
-    plt.close()
+    # plt.close()
 
 
 if __name__ == "__main__":
