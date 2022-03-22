@@ -1,17 +1,15 @@
-"""Deep Reinforcement Learning for Multi-agent system.
+"""Deep Q-Learning for independent learners.
 
-    Graph Attention Reinforcement Learning
+    DQN
 
     Paradigms:
     ---------
-    * Parameter Sharing: att, W.
-    * Centralized Training: Decentralized Execution.
-    * Learning to communicate: Sends message to agents.
+    * Decentralized training: Decentralized execution.
 
     To run a template:
     1) set agent_type = DQN
-    >>> python models/train.py
     >>> tensorboard --logdir lightning_logs
+    >>> python models/train.py
 
 
     TODO:
@@ -20,38 +18,29 @@
 
     References:
     -----------
-    `Graph attention networks. 2017`
-    https://arxiv.org/abs/1710.10903
-    Petar Velickovic, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Lio, and Yoshua Bengio. 2017.
-    https://github.com/Diego999/pyGAT/blob/master/train.py
+    * Mnih et al., 2015 `Playing Atari with Deep Reinforcement Learning`
 """
-import argparse
 from pathlib import Path
-from collections import OrderedDict
-from functools import cached_property
-from tqdm.auto import trange
 import numpy as np
-from scipy.sparse import csr_matrix
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 
 import pytorch_lightning as pl
 
-from utils.file_io import parse_train_parameters, \
-    expr_logs_dump, expr_path_create, \
-    expr_path_test_target
-from utils import concat, flatten
+from utils import flatten
 from agents.experience import Experience, ReplayBuffer, RLDataset
 from approximators.dqn import DQN
 
-TRAIN_CONFIG_PATH = 'config/train.config'
-RUN_CONFIG_PATH = 'config/run.config'
+TRAIN_CONFIG_PATH = "config/train.config"
+RUN_CONFIG_PATH = "config/run.config"
 
-def simple_hash(x): return hash(x) % (11 * 255)
+
+def simple_hash(x):
+    return hash(x) % (11 * 255)
+
 
 # Should this agent be general?
 # Or, should function approximation be associated to agnt
@@ -140,8 +129,11 @@ class Agent:
             experience = self.env.step(actions)
 
         next_state, reward, done, _ = experience
-        next_state, reward, actions = \
-            list(flatten(next_state.values())), list(reward.values()), list(actions.values())
+        next_state, reward, actions = (
+            list(flatten(next_state.values())),
+            list(reward.values()),
+            list(actions.values()),
+        )
         if epsilon > 0.0:
             exp = Experience(self.state, actions, reward, done, next_state)
 
@@ -154,7 +146,7 @@ class Agent:
 
 
 class DQNLightning(pl.LightningModule):
-    """ Graph Attention Networks
+    """Basic DQN Model.
 
     * For function approximation.
     * target_net: a dephased copy
@@ -168,10 +160,21 @@ class DQNLightning(pl.LightningModule):
                                save_agent_interval, chkpt_dir, seed)
     """
 
-    def __init__(self, env, device, train_args, episode_timesteps=3600,
-                 replay_size=200, warm_start_steps=0, gamma=0.98, 
-                 sync_rate=10, lr=1e-2, batch_size=1000, save_path=None,
-                 **kwargs):
+    def __init__(
+        self,
+        env,
+        device,
+        train_args,
+        episode_timesteps=3600,
+        replay_size=200,
+        warm_start_steps=0,
+        gamma=0.98,
+        sync_rate=10,
+        lr=1e-2,
+        batch_size=1000,
+        save_path=None,
+        **kwargs,
+    ):
 
         super(DQNLightning, self).__init__(**kwargs)
         self.automatic_optimization = False
@@ -187,10 +190,11 @@ class DQNLightning(pl.LightningModule):
         self.epsilon_init = train_args.epsilon_init
         self.epsilon_final = train_args.epsilon_final
         self.epsilon_timesteps = train_args.epsilon_timesteps
+        self.epsilon_decay = 'exponential' # or linear.
 
         self.env = env
         self.save_path = save_path
-        self.num_episodes = 0
+        self.n_episodes = 0
 
         # TODO: mdp_args
         self.n_agents = len(self.env.tl_ids)
@@ -213,22 +217,25 @@ class DQNLightning(pl.LightningModule):
     def timestep(self):
         return self._timestep + self.episode_timestep
 
-
     @property
     def reward(self):
         return self._reward
 
     @property
     def epsilon(self):
-        epsilon = max(self.epsilon_final,
-                      self.epsilon_init - \
-                      (self.timestep + 1) / self.epsilon_timesteps)
+        if self.epsilon_decay == 'linear':
+            epsilon = max(self.epsilon_final,
+                          self.epsilon_init -
+                          (self.timestep + 1) / self.epsilon_timesteps)
+        else:
+            epsilon = max(0.95**self.n_episodes, self.epsilon_final)
         return epsilon
 
-    
-    def reset(self, device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')):
-        if self.num_episodes > 0:
-            state_dict = torch.load(self.save_path / str(self.timestep) / f'DQN.chkpt')
+    def reset(
+        self, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ):
+        if self.n_episodes > 0:
+            state_dict = torch.load(self.save_path / str(self.timestep) / "DQN.chkpt")
             self.net.load_state_dict(state_dict, strict=False)
             self.target_net.load_state_dict(state_dict, strict=False)
             self.agent.reset()
@@ -248,7 +255,8 @@ class DQNLightning(pl.LightningModule):
 
             self.buffer = ReplayBuffer(self.replay_size)
             self.agent = Agent(self.env, self.buffer)
-            if self.warm_start_steps > 0: self.populate(device=device, steps=self.warm_start_steps)
+            if self.warm_start_steps > 0:
+                self.populate(device=device, steps=self.warm_start_steps)
         self.episode_reward = 0
 
     def populate(self, device=None, steps=1000):
@@ -261,7 +269,8 @@ class DQNLightning(pl.LightningModule):
         * steps: number of random steps to populate the buffer with
         """
         if device is None:
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
         for i in range(steps):
             self.agent.play_step(self.net, epsilon=self.epsilon, device=device)
         self.env.reset()
@@ -273,7 +282,7 @@ class DQNLightning(pl.LightningModule):
 
         Parameters:
         -----------
-        * batch: list<torch.Tensor> 
+        * batch: list<torch.Tensor>
         List containing five elements:
         * state: torch.DoubleTensor<B, N * n_input>
         * action: torch.LongTensor<B, N>
@@ -289,7 +298,7 @@ class DQNLightning(pl.LightningModule):
 
         losses = []
         for n_a in range(self.n_agents):
-            x = states[:, n_a, :].squeeze(1) 
+            x = states[:, n_a, :].squeeze(1)
             y = next_states[:, n_a, :].squeeze(1)
             u = actions[:, n_a].unsqueeze(-1)
             v = rewards[:, n_a]
@@ -299,7 +308,6 @@ class DQNLightning(pl.LightningModule):
             with torch.no_grad():
                 next_state_values, _ = self.target_net(y, n_a).max(-1)
                 next_state_values = next_state_values.detach()
-
 
             expected_state_action_values = next_state_values * self.gamma + v
 
@@ -326,10 +334,10 @@ class DQNLightning(pl.LightningModule):
         reward, done = self.agent.play_step(self.net, self.epsilon, device)
         self.episode_reward += sum(reward) * 0.001
 
-
         # calculates training loss
         optimizers = self.optimizers(use_pl_optimizer=True)
-        if not isinstance(optimizers, list): optimizers = [optimizers]
+        if not isinstance(optimizers, list):
+            optimizers = [optimizers]
 
         losses = self.loss_step(batch)
         loss = 0
@@ -344,7 +352,7 @@ class DQNLightning(pl.LightningModule):
             self.target_net.load_state_dict(self.net.state_dict(), strict=False)
 
         if done:
-            self.num_episodes += 1
+            self.n_episodes += 1
             # save and reset the network
             # update log.
             self._timestep += self.episode_timesteps
@@ -352,7 +360,7 @@ class DQNLightning(pl.LightningModule):
             if self.save_path is not None:
                 self.save_checkpoint(self.save_path, self.timestep)
                 self.reset()
-            print('')  # Skip an output line
+            print("")  # Skip an output line
 
         log = {
             "steps": torch.tensor(self.episode_timestep).to(device),
@@ -360,10 +368,9 @@ class DQNLightning(pl.LightningModule):
             "epsilon": torch.tensor(np.round(self.epsilon, 4)).to(device),
         }
 
-        self.log('loss', loss.to(device), logger=True, prog_bar=True)
+        self.log("loss", loss.to(device), logger=True, prog_bar=True)
         for k, v in log.items():
             self.log(k, v, logger=True, prog_bar=True)
-
 
     def configure_optimizers(self):
         """Initialize Adam optimizer."""
@@ -377,15 +384,17 @@ class DQNLightning(pl.LightningModule):
     def __dataloader(self):
         """Initialize the Replay Buffer dataset used for retrieving experiences."""
         dataset = RLDataset(self.buffer, self.episode_timesteps)
-        dataloader = DataLoader(dataset=dataset, batch_size=self.batch_size, sampler=None)
+        dataloader = DataLoader(
+            dataset=dataset, batch_size=self.batch_size, sampler=None
+        )
         return dataloader
 
     def _debatch(self, batch):
-        '''Splits and processes batch.
+        """Splits and processes batch.
 
         Parameters:
         -----------
-        * batch: list<torch.Tensor> 
+        * batch: list<torch.Tensor>
         List containing five elements:
         * state, torch.DoubleTensor<B, N * n_input>
         * action, torch.LongTensor<B, N>
@@ -401,17 +410,18 @@ class DQNLightning(pl.LightningModule):
         * reward: torch.DoubleTensor<B, N>
         * dones: torch.BoolTensor<B>
         * next_state: torch.FloatTensor<B, N * n_input>
-        ''' 
-        device = self.get_device(batch)
+        """
         states, actions, rewards, dones, next_states = batch
         states = self._debatch_state(states)
         next_states = self._debatch_state(next_states)
         return states, *batch[1:-1], next_states
 
-    
     def _debatch_state(self, states):
-        ret = states.view(self._state_view_shape). \
-              type(torch.FloatTensor).to(states.device)
+        ret = (
+            states.view(self._state_view_shape)
+            .type(torch.FloatTensor)
+            .to(states.device)
+        )
         return ret
 
     def train_dataloader(self):
@@ -423,25 +433,28 @@ class DQNLightning(pl.LightningModule):
         return batch[0].device.index if self.on_gpu else "cpu"
 
     """ Serialization """
+
     def save_checkpoint(self, chkpt_dir_path, chkpt_num):
-        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f'DQN.chkpt'
+        file_path = Path(chkpt_dir_path) / str(chkpt_num) / f"DQN.chkpt"
         file_path.parent.mkdir(exist_ok=True)
         torch.save(self.net.state_dict(), file_path)
 
-def load_checkpoint(env, chkpt_dir_path, rollout_time=None, network=None, chkpt_num=None):
+
+def load_checkpoint(
+    env, chkpt_dir_path, rollout_time=None, network=None, chkpt_num=None
+):
     if chkpt_num == None:
         chkpt_num = max(int(folder.name) for folder in chkpt_dir_path.iterdir())
     chkpt_path = chkpt_dir_path / str(chkpt_num)
     print("Loading checkpoint: ", chkpt_path)
 
-    state_dict = torch.load(chkpt_path / f'DQN.chkpt')
-    n_agents = state_dict['hparams.n_agents']
-    n_input = state_dict['hparams.n_input']
-    n_hidden = state_dict['hparams.n_hidden']
-    n_output = state_dict['hparams.n_output']
+    state_dict = torch.load(chkpt_path / f"DQN.chkpt")
+    n_agents = state_dict["hparams.n_agents"]
+    n_input = state_dict["hparams.n_input"]
+    n_hidden = state_dict["hparams.n_hidden"]
+    n_output = state_dict["hparams.n_output"]
 
-    net = DQN(n_agents=n_agents, n_input=n_input,
-               n_hidden=n_hidden, n_output=n_output)
+    net = DQN(n_agents=n_agents, n_input=n_input, n_hidden=n_hidden, n_output=n_output)
     net.load_state_dict(state_dict, strict=False)
     agent = Agent(env)
     return agent, net

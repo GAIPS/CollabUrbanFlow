@@ -149,7 +149,7 @@ class Agent:
 
 
 class GATLightning(pl.LightningModule):
-    """Basic DQN Model.
+    """ Graph Attention Networks
 
     >>> GATLightning(env="CartPole-v1")  # doctest: +ELLIPSIS +NORMALIZE_WHITESPACE
     DQNLightning(
@@ -161,7 +161,6 @@ class GATLightning(pl.LightningModule):
       )
     )
     """
-
     def __init__(self, env, device, train_args, replay_size=200, warm_start_steps=0,
                  gamma=0.98, sync_rate=10, lr=1e-2, episode_timesteps=3600, batch_size=1000,
                  save_path=None, **kwargs):
